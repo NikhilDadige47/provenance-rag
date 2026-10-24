@@ -3,7 +3,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0+-green.svg)](https://fastapi.tiangolo.com/)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-2.9.0+-blue.svg)](https://docs.pydantic.dev/)
-[![Pytest](https://img.shields.io/badge/pytest-39%20passed-brightgreen.svg)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/pytest-55%20passed-brightgreen.svg)](https://docs.pytest.org/)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
 > A production-grade, financially isolated Retrieval-Augmented Generation (RAG) framework designed to eliminate wallet drain, protect visitor API keys, prevent SSRF attacks, and guarantee document parsing quality before embedding.
@@ -17,10 +17,11 @@
 4. [🏛️ Phase 0: Foundation, Architecture Decisions & Workspace Setup](#️-phase-0-foundation-architecture-decisions--workspace-setup)
 5. [🛡️ Phase 1: Key Safety, Credential Isolation & Egress Firewall](#️-phase-1-key-safety-credential-isolation--egress-firewall)
 6. [📑 Phase 2: Parser Layer, Universal Normalization & Quality Gate](#-phase-2-parser-layer-universal-normalization--quality-gate)
-7. [🔍 Real-World Walkthrough: Trace of an Uploaded Document](#-real-world-walkthrough-trace-of-an-uploaded-document)
-8. [🗺️ Codebase Directory Map (Organized by Phase)](#️-codebase-directory-map-organized-by-phase)
-9. [🚀 How to Run and Verify](#-how-to-run-and-verify)
-10. [📈 Master Roadmap & Phase-by-Phase Progress](#-master-roadmap--phase-by-phase-progress)
+7. [🧩 Phase 3: Hybrid Chunker, Heading Fusion, Dual Embeddings & Qdrant Storage](#-phase-3-hybrid-chunker-heading-fusion-dual-embeddings--qdrant-storage)
+8. [🔍 Real-World Walkthrough: Trace of an Uploaded Document](#-real-world-walkthrough-trace-of-an-uploaded-document)
+9. [🗺️ Codebase Directory Map (Organized by Phase)](#️-codebase-directory-map-organized-by-phase)
+10. [🚀 How to Run and Verify](#-how-to-run-and-verify)
+11. [📈 Master Roadmap & Phase-by-Phase Progress](#-master-roadmap--phase-by-phase-progress)
 
 ---
 
@@ -270,6 +271,77 @@ Prevents corrupted or silently dropped parser outputs from entering the vector i
 
 ---
 
+## 🧩 Phase 3: Hybrid Chunker, Heading Fusion, Dual Embeddings & Qdrant Storage
+
+> **Phase 3 Goal:** Transform `StructuredDoc` into structure-aware hierarchical chunks, enrich child chunks with heading fusion for maximum retrieval accuracy, vectorize with dual embeddings (Cohere Dense + local BM25 Sparse), and store in Qdrant and SQLite with strict session privacy (`scope`).
+
+```
+[ Normalized StructuredDoc ]
+              │
+              ▼
+┌───────────────────────────────┐
+│ 1. Heading Breadcrumbs Stack  │  Doc > H1 > H2 > H3
+└─────────────┬─────────────────┘
+              │
+              ▼
+┌───────────────────────────────┐
+│ 2. Parent-Child Decomposition │  Parents: ~1000 tokens (saved in SQLite)
+└─────────────┬─────────────────┘  Children: ~300 tokens (indexed in Qdrant)
+              │
+              ▼
+┌───────────────────────────────┐
+│ 3. Heading Fusion             │  display_text: clean paragraph
+└─────────────┬─────────────────┘  embedding_text: [Breadcrumbs] + paragraph
+              │
+              ▼
+┌───────────────────────────────┐
+│ 4. Dual Vectorization         │  • Dense: Cohere Embed v3 (1024-dim, owner key)
+└─────────────┬─────────────────┘  • Sparse: Local BM25 (in-process, $0.00 cost)
+              │
+              ▼
+┌───────────────────────────────┐
+│ 5. Dual Storage Isolation     │  • Qdrant: points tagged with scope="session_xyz"
+└───────────────────────────────┘  • SQLite: parents filtered by parent_id & scope
+```
+
+### 1. Hybrid Chunker (`src/ingest/chunking/hybrid_chunker.py`)
+* **Hierarchical Breadcrumbs (`heading_stack.py`):** Sequential structure pass that tags every paragraph, table, and list item with its ancestral section path (e.g. `Acme Report > Financials > 2026 Revenue`).
+* **Table Row Preservation (`table_splitter.py`):** Tables are kept atomic if under 800 tokens. Oversized tables are split strictly by rows, repeating the Markdown header on every chunk so columns never lose context.
+* **Recursive Token Splitter (`recursive_splitter.py`):** Separator cascade (`\n\n` $\to$ `\n` $\to$ `. , ? , ! ` $\to$ ` `) with configurable token overlap (12%).
+* **Deterministic Chunk IDs:** Every parent and child chunk gets an idempotent SHA-256 hash ID (`c_<hash>`), preventing vector duplication upon job retries.
+* **Sequential Chunk Linking:** Sets `prev_chunk_id` and `next_chunk_id` on all children for window expansion in Phase 4.
+
+### 2. Heading Fusion
+Every child chunk generates two distinct text representations:
+* `display_text`: The clean, unpolluted original passage shown to the visitor and passed to the LLM during answer synthesis.
+* `embedding_text`: `[Breadcrumbs]\n\nClean text`. This injects section context into Cohere vector search even if the child passage doesn't mention the document or section title directly!
+
+### 3. Dual Embedding Layer (Dense + Sparse Hybrid)
+* **Cohere Embed Adapter (`src/retrieval/embed.py`):**
+  * Pinned model `embed-english-v3.0` (1024 dimensions).
+  * Strict separation between `input_type = "search_document"` (indexing) and `search_query` (retrieval).
+  * Batching up to 96 items with bounded exponential backoff for rate limits.
+  * Usage meter callback hook to track chunk embeddings against owner spend caps.
+* **Local Sparse Vectorizer (`src/retrieval/sparse.py`):**
+  * In-process term frequency / BM25 weighting with deterministic token hashing into a 1M dimension space.
+  * Zero external API cost ($0.00). Catches exact part numbers, dollar figures, and acronyms that dense vectors blur.
+
+### 4. Qdrant Vector Store with Scope Isolation (`src/retrieval/store.py`)
+* Dual vector collection setup in Qdrant: `"dense"` (Cosine, 1024-dim) and `"sparse"` (BM25 values).
+* Payload indexes on `scope` and `doc_id`.
+* Server-enforced scope filtering: Searches strictly filter `scope IN [session_id, "demo"]`. User A can **never** search or view User B's documents.
+* Clean TTL and session deletion via `delete_by_scope` and `delete_by_doc`.
+
+### 5. Relational SQLite Storage & Zero-Key Audit (`src/storage/db.py`)
+* Manages structured relational tables: `sessions`, `jobs`, `documents`, `parents`, `parse_cache`, and `usage_daily`.
+* **Zero-Secret Invariant:** Validated by automated security audit test that guarantees no table or column ever stores credentials or API keys.
+* Parent context fetching is strictly scoped: `SELECT ... WHERE parent_id = ? AND (session_id = ? OR session_id = 'demo')`.
+
+### 6. Offline Demo Ingestion Script (`scripts/ingest_demo.py`)
+* Pipeline script to parse, clean, audit, chunk, embed, and index public documents from `demo_corpus/` into Qdrant under `scope = "demo"` for Tier A instant demo access.
+
+---
+
 ## 🔍 Real-World Walkthrough: Trace of an Uploaded Document
 
 Here is a step-by-step trace of how a real document is processed from start to finish:
@@ -347,7 +419,14 @@ The clean document now looks like this:
 * Empty Pages: 0 missing pages $\to$ **PASS**
 * Garbled Characters: 0.00% $\to$ **PASS**
 * **Result:** `QualityGateResult(passed=True, has_warnings=False)`.
-* *The document is ready for Phase 3 chunking!*
+
+### Step 6: Chunking, Heading Fusion & Dual Indexing (Phase 3)
+* **Parent Chunk Created:** Full section text stored in SQLite under `parent_id = "p_a912"`.
+* **Child Chunk Created:** Small passage `"Operating income reached $4.2 billion..."` with `prev_chunk_id = None`, `next_chunk_id = "c_b341"`.
+* **Heading Fusion:** `embedding_text` generated as `"[Global Operations 2026 > Executive Summary]\n\nOperating income reached $4.2 billion..."`.
+* **Vector Embeddings:** 1024-dim dense vector computed via Cohere + sparse BM25 vector computed locally.
+* **Qdrant Storage:** Upserted with `scope = "session_user123"`.
+* *The document is ready for Phase 4 retrieval and question answering!*
 
 ---
 
@@ -359,10 +438,15 @@ provenance-rag/
 ├── pyproject.toml                 # [Phase 0] Dependencies, build tooling, ruff, & pytest config
 ├── .gitignore                     # [Phase 0] Protection for .env, virtualenvs, uploads, & caches
 ├── .env.example                   # [Phase 0] Owner configuration template & spend controls
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # [Phase 0] GitHub Actions automated lint & pytest CI pipeline
 ├── docs/
 │   └── DECISIONS.md               # [Phase 0] Architecture Decision Records (ADRs)
 ├── demo_corpus/                   # [Phase 0] Public documents for Tier A (zero-key demo)
 ├── samples/                       # [Phase 0] Sample PDFs for testing and quality gate benchmarks
+├── scripts/
+│   └── ingest_demo.py             # [Phase 3] Offline demo corpus ingestion script (scope="demo")
 │
 ├── src/
 │   ├── interfaces.py              # [Phase 0] Blueprints: IParser, IChunker, IEmbedder, IReranker, ILLM
@@ -376,14 +460,30 @@ provenance-rag/
 │   │   └── errors.py              # [Phase 1] Error taxonomy (fail-fast visitor key policies)
 │   │
 │   ├── ingest/
-│   │   └── parsers/               # [Phase 2] Document Parser & Normalization Layer
-│   │       ├── structured_doc.py  # [Phase 2] Block & StructuredDoc universal schemas
-│   │       ├── cleanup.py         # [Phase 2] Hyphenation repair & running header/footer stripper
-│   │       ├── local_pymupdf.py   # [Phase 2] Free local PyMuPDF parser & fast page counter
-│   │       ├── llamaparse.py      # [Phase 2] LlamaParse cloud adapter & Markdown normalizer
-│   │       ├── landingai.py       # [Phase 2] Landing AI ADE adapter with spatial bounding boxes
-│   │       ├── registry.py        # [Phase 2] ParserRegistry factory
-│   │       └── quality_gate.py    # [Phase 2] Coverage, heading, empty page & garble audit checks
+│   │   ├── parsers/               # [Phase 2] Document Parser & Normalization Layer
+│   │   │   ├── structured_doc.py  # [Phase 2] Block & StructuredDoc universal schemas
+│   │   │   ├── cleanup.py         # [Phase 2] Hyphenation repair & running header/footer stripper
+│   │   │   ├── local_pymupdf.py   # [Phase 2] Free local PyMuPDF parser & fast page counter
+│   │   │   ├── llamaparse.py      # [Phase 2] LlamaParse cloud adapter & Markdown normalizer
+│   │   │   ├── landingai.py       # [Phase 2] Landing AI ADE adapter with spatial bounding boxes
+│   │   │   ├── registry.py        # [Phase 2] ParserRegistry factory
+│   │   │   └── quality_gate.py    # [Phase 2] Coverage, heading, empty page & garble audit checks
+│   │   │
+│   │   └── chunking/              # [Phase 3] Hybrid Chunker Subsystem
+│   │       ├── models.py          # [Phase 3] ParentChunk, ChildChunk, ChunkingConfig, ChunkingResult
+│   │       ├── tokenizer.py       # [Phase 3] Conservative token estimation & truncation
+│   │       ├── heading_stack.py   # [Phase 3] Structure pass & breadcrumb trail generator
+│   │       ├── table_splitter.py  # [Phase 3] Markdown table splitter with header preservation
+│   │       ├── recursive_splitter.py # [Phase 3] Recursive separator cascade with token overlap
+│   │       └── hybrid_chunker.py  # [Phase 3] IChunker implementation with heading fusion
+│   │
+│   ├── retrieval/                 # [Phase 3] Vector Embeddings & Qdrant Storage
+│   │   ├── embed.py               # [Phase 3] CohereEmbedder (IEmbedder) with backoff & owner usage meter
+│   │   ├── sparse.py              # [Phase 3] LocalSparseVectorizer (in-process BM25 token hashing, $0)
+│   │   └── store.py               # [Phase 3] QdrantVectorStore with hybrid search & scope isolation
+│   │
+│   ├── storage/                   # [Phase 3] Relational Metadata Storage
+│   │   └── db.py                  # [Phase 3] DatabaseManager (SQLite with zero-key security audit)
 │   │
 │   └── api/
 │       └── connections.py         # [Phase 1] verify_provider_connection pre-flight testing service
@@ -397,13 +497,22 @@ provenance-rag/
     │   ├── test_context.py        # [Phase 1] Key lifecycle and RAM disposal tests
     │   └── test_key_leakage.py    # [Phase 1] End-to-end grep audit verifying zero credential leaks
     │
-    └── ingest/                    # [Phase 2] 17 document ingestion unit tests
-        ├── test_structured_doc.py # [Phase 2] Block validation and query helper tests
-        ├── test_cleanup.py        # [Phase 2] Hyphenation and header/footer stripping tests
-        ├── test_normalizers.py    # [Phase 2] LlamaParse & Landing AI payload translation tests
-        ├── test_quality_gate.py   # [Phase 2] Pass/warning heuristic tests
-        ├── test_local_pymupdf.py  # [Phase 2] Real PDF creation, page counting, and extraction tests
-        └── test_registry.py       # [Phase 2] Registry resolution and unknown parser tests
+    ├── ingest/                    # [Phase 2 & 3] 23 ingestion & chunking unit tests
+    │   ├── test_structured_doc.py # [Phase 2] Block validation and query helper tests
+    │   ├── test_cleanup.py        # [Phase 2] Hyphenation and header/footer stripping tests
+    │   ├── test_normalizers.py    # [Phase 2] LlamaParse & Landing AI payload translation tests
+    │   ├── test_quality_gate.py   # [Phase 2] Pass/warning heuristic tests
+    │   ├── test_local_pymupdf.py  # [Phase 2] Real PDF creation, page counting, and extraction tests
+    │   ├── test_registry.py       # [Phase 2] Registry resolution and unknown parser tests
+    │   └── test_chunking.py       # [Phase 3] Heading stack, table split, recursive split & fusion tests
+    │
+    ├── retrieval/                 # [Phase 3] 7 embedding and vector store unit tests
+    │   ├── test_embed.py          # [Phase 3] Cohere embedder adapter, batching, and usage callback tests
+    │   ├── test_sparse.py         # [Phase 3] Local sparse vectorizer and deterministic hashing tests
+    │   └── test_store.py          # [Phase 3] Qdrant dual-vector upsert and cross-session isolation tests
+    │
+    └── storage/                   # [Phase 3] 3 relational storage unit tests
+        └── test_db.py             # [Phase 3] Zero-secret schema audit, parent fetch, and session usage tests
 ```
 
 ---
@@ -423,13 +532,15 @@ pip install -e ".[dev]"
 ```
 
 ### 2. Run All Automated Tests
-To execute the complete suite of **39 tests**:
+To execute the complete suite of **55 tests**:
 ```powershell
 .venv\Scripts\pytest -v
 ```
-You will see 39 green passes:
+You will see 55 green passes:
 * `tests/security/` (22 tests verifying secret masking, log filters, egress blocking, and zero leaks - **Phase 1**)
-* `tests/ingest/` (17 tests verifying document parsing, cleanup rules, normalizers, and quality gates - **Phase 2**)
+* `tests/ingest/` (23 tests verifying document parsing, cleanup rules, normalizers, quality gates, and hybrid chunking - **Phase 2 & 3**)
+* `tests/retrieval/` (7 tests verifying Cohere embedding batching, local BM25 sparse vectors, and Qdrant scope isolation - **Phase 3**)
+* `tests/storage/` (3 tests verifying zero-key schema security, parent context retrieval, and usage tracking - **Phase 3**)
 
 ### 3. Run Code Quality & Linting
 ```powershell
@@ -444,6 +555,7 @@ Output: `All checks passed!`
 - [x] **Phase 0: Foundation, Architecture Decisions & Workspace Setup**
   - [x] `docs/DECISIONS.md` (Locked ADRs: 3-tier model, Cohere pinned models, Qdrant hosting)
   - [x] `.env.example` with owner spend controls, session quotas, and kill switches
+  - [x] `.github/workflows/ci.yml` (Automated GitHub Actions CI pipeline)
   - [x] `src/interfaces.py` defining decoupled provider contracts (`IParser`, `IChunker`, `IEmbedder`, `IReranker`, `ILLM`)
 - [x] **Phase 1: Key Safety, Credential Isolation & Egress Firewall**
   - [x] `src/security/secret.py` (`Secret` type with Pydantic v2 core schema masking)
@@ -462,13 +574,17 @@ Output: `All checks passed!`
   - [x] `src/ingest/parsers/registry.py` (Dynamic parser factory)
   - [x] `src/ingest/parsers/quality_gate.py` (Coverage, heading sanity, empty page & garble checks)
   - [x] 17 ingestion & parser unit tests
-- [ ] *Up Next:* **Phase 3: Chunker, Cohere Embeddings & Indexing**
-  - [ ] Hybrid Chunker (Structure-aware heading stack + Recursive splitter + Parent-Child)
-  - [ ] Heading fusion (`embedding_text` with breadcrumbs vs. clean `display_text`)
-  - [ ] Cohere Embed adapter (document vs. query input types on owner key)
-  - [ ] Local FastEmbed/BM25 sparse vector computation
-  - [ ] Qdrant Cloud collection setup with payload indexes on `scope`
-  - [ ] Offline demo corpus ingestion under `scope = "demo"`
+- [x] **Phase 3: Chunker, Cohere Embeddings & Indexing**
+  - [x] `src/ingest/chunking/hybrid_chunker.py` (Structure pass + Recursive splitter + Parent-Child)
+  - [x] `src/ingest/chunking/heading_stack.py` & `tokenizer.py` (Heading breadcrumbs and token estimation)
+  - [x] `src/ingest/chunking/table_splitter.py` (Markdown table splitting with header preservation)
+  - [x] Heading fusion (`embedding_text` with breadcrumbs vs. clean `display_text`)
+  - [x] `src/retrieval/embed.py` (Cohere Embed adapter on owner key with batching and usage tracking)
+  - [x] `src/retrieval/sparse.py` (Local BM25 token frequency sparse vector calculation, $0 cost)
+  - [x] `src/retrieval/store.py` (Qdrant collection setup with payload indexes on `scope` and `doc_id`)
+  - [x] `src/storage/db.py` (SQLite schema with zero-secret audit, parent lookups, and session counters)
+  - [x] `scripts/ingest_demo.py` (Offline demo corpus ingestion under `scope = "demo"`)
+  - [x] 16 new Phase 3 unit tests (55 total passing tests)
 - [ ] *Up Next:* **Phase 4: Retrieval (Cohere Rerank) & Generation, CLI**
 - [ ] *Up Next:* **Phase 5: API, Sessions, Demo Mode & Owner Cost Controls**
 - [ ] *Up Next:* **Phase 6: Upload Flow, Jobs & Data Lifecycle**

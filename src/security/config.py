@@ -32,6 +32,11 @@ class OwnerConfig(BaseSettings):
         extra="ignore",
     )
 
+    @classmethod
+    def from_env(cls) -> "OwnerConfig":
+        """Load owner configuration from server environment variables."""
+        return cls()
+
     # General Environment
     app_env: str = Field(default="development")
     log_level: str = Field(default="INFO")
