@@ -56,7 +56,7 @@ class OwnerConfig(BaseSettings):
     # Default LLM (Owner-Funded)
     default_llm_provider: str = Field(default="groq")
     default_llm_api_key: Secret = Field(default=Secret("gsk_placeholder"))
-    default_llm_model: str = Field(default="llama-3.3-70b-versatile")
+    default_llm_model: str = Field(default="openai/gpt-oss-120b")
 
     # Spend Controls & Caps (Owner Protection)
     kill_switch_active: bool = Field(default=False)

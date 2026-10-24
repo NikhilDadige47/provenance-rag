@@ -45,7 +45,7 @@ class CohereEmbedder(IEmbedder):
         dimension: int = EMBEDDING_DIMENSION,
         usage_callback: Callable[[int], None] | None = None,
     ) -> None:
-        self._api_key = api_key or OwnerConfig.from_env().cohere_api_key
+        self._api_key = api_key if api_key is not None else OwnerConfig.from_env().cohere_api_key
         self._model_name = model_name
         self._dimension = dimension
         self._usage_callback = usage_callback
