@@ -38,3 +38,27 @@
 ## Decision 6: Error Taxonomy & Fail-Fast Policy
 - Visitor key errors (invalid key, quota exceeded) fail fast with clear UI messages and are **never retried**.
 - Owner key rate limits use bounded exponential backoff with a circuit breaker.
+
+## Decision 7: Owner Spend Caps & Financial Thresholds
+Owner financial limits are configured in `.env` and enforced across sessions and daily operations:
+- **Per-Session Limits:**
+  - Maximum Chunks Embedded: 1,500 chunks
+  - Maximum Rerank Calls: 30 calls
+  - Maximum Questions (Owner Default LLM): 15 questions
+  - Maximum Questions (Visitor BYOK LLM): 100 questions
+  - Maximum Documents per Session: 3 documents
+  - Maximum Total Pages per Session: 30 pages
+  - Session TTL: 2 hours (hard deletion of vectors, SQL rows, and cached parsed files)
+- **Daily Global Limits (Owner Kill Switch Protection):**
+  - Maximum Chunks Embedded: 25,000 chunks/day
+  - Maximum Rerank Calls: 500 calls/day
+  - Maximum Owner LLM Tokens: 500,000 tokens/day
+  - Maximum Jobs: 100 jobs/day
+
+## Decision 8: Quality Gate Calibrated Thresholds
+Parsed documents undergo local quality evaluation before chunking and embedding:
+- **Text Coverage Ratio:** Minimum 0.65, Maximum 2.5 compared to PyMuPDF plain-text extraction. Outside this range flags incomplete parsing or duplication.
+- **Heading Sanity:** Documents with >= 4 pages and 0 headings, or documents with > 3 erratic level jumps (e.g., H1 -> H5) trigger quality warnings.
+- **Empty Pages:** If > 30% of pages yield no extracted blocks, a warning is raised.
+- **Garbled Text Density:** If > 3% of characters are replacement characters (`\ufffd`) or unprintable private-use unicode, a warning is raised.
+- **Non-blocking Behavior:** Warnings notify the visitor and suggest trying an alternative parser (or local parser fallback), but do not discard the parse.

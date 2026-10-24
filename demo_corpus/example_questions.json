@@ -1,0 +1,62 @@
+[
+  {
+    "id": "q1",
+    "chip": "What is the primary purpose stated in the Preamble of the US Constitution?",
+    "document": "us_constitution_bill_of_rights.pdf",
+    "expected_answer_snippet": "form a more perfect Union, establish Justice, insure domestic Tranquility"
+  },
+  {
+    "id": "q2",
+    "chip": "Which freedoms are explicitly protected under the First Amendment?",
+    "document": "us_constitution_bill_of_rights.pdf",
+    "expected_answer_snippet": "religion, speech, press, right of the people peaceably to assemble"
+  },
+  {
+    "id": "q3",
+    "chip": "What protection is guaranteed by the Fourth Amendment?",
+    "document": "us_constitution_bill_of_rights.pdf",
+    "expected_answer_snippet": "unreasonable searches and seizures"
+  },
+  {
+    "id": "q4",
+    "chip": "What was Acme Corporation's total consolidated revenue in FY2025?",
+    "document": "acme_annual_financial_report_2025.pdf",
+    "expected_answer_snippet": "$120 million"
+  },
+  {
+    "id": "q5",
+    "chip": "How much revenue did Enterprise Cloud services contribute to Acme in 2025?",
+    "document": "acme_annual_financial_report_2025.pdf",
+    "expected_answer_snippet": "$75,000,000"
+  },
+  {
+    "id": "q6",
+    "chip": "By what percentage did Acme's operating expenses decrease?",
+    "document": "acme_annual_financial_report_2025.pdf",
+    "expected_answer_snippet": "decreased by 8%"
+  },
+  {
+    "id": "q7",
+    "chip": "What is Acme Corporation's debt-to-equity ratio?",
+    "document": "acme_annual_financial_report_2025.pdf",
+    "expected_answer_snippet": "0.42"
+  },
+  {
+    "id": "q8",
+    "chip": "Where are legislative powers vested according to Article I of the Constitution?",
+    "document": "us_constitution_bill_of_rights.pdf",
+    "expected_answer_snippet": "in a Congress of the United States, which shall consist of a Senate and House of Representatives"
+  },
+  {
+    "id": "q9",
+    "chip": "What is Acme's dividend payout policy for 2027?",
+    "document": null,
+    "expected_answer_snippet": "NOT_FOUND"
+  },
+  {
+    "id": "q10",
+    "chip": "What were the sales figures for Mars rover titanium wheels?",
+    "document": null,
+    "expected_answer_snippet": "NOT_FOUND"
+  }
+]

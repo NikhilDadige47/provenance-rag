@@ -124,3 +124,76 @@ def test_hybrid_chunker_empty_doc():
     result = chunker.chunk(doc)
     assert len(result.parents) == 0
     assert len(result.children) == 0
+
+
+def test_oversized_section_splitting():
+    """Verify sections exceeding parent_max_tokens are split into sub-parents."""
+    from src.ingest.chunking.models import ChunkingConfig
+
+    cfg = ChunkingConfig(parent_max_tokens=200, parent_target_tokens=150)
+    chunker = HybridChunker(config=cfg)
+
+    # 10 paragraphs of 30 words each ~= 400 tokens total in a single section
+    blocks = [
+        Block(type=BlockType.HEADING, text="Large Section", level=1, page=1, order=0)
+    ]
+    for i in range(1, 11):
+        blocks.append(
+            Block(
+                type=BlockType.PARAGRAPH,
+                text=f"Paragraph {i}: " + ("text content " * 15),
+                page=1,
+                order=i,
+            )
+        )
+
+    doc = StructuredDoc(
+        doc_id="doc_large_sec",
+        title="Oversized Test",
+        page_count=1,
+        parser_used="test",
+        blocks=blocks,
+    )
+    result = chunker.chunk(doc, config=cfg)
+
+    # Should have split into multiple sub-parents
+    assert len(result.parents) > 1
+    for p in result.parents:
+        assert p.token_count <= 250
+    # Every child must still have a valid parent
+    parent_ids = {p.parent_id for p in result.parents}
+    for c in result.children:
+        assert c.parent_id in parent_ids
+
+
+def test_no_heading_doc_fixed_size_parents():
+    """Verify documents with zero headings are split into fixed-size parents."""
+    from src.ingest.chunking.models import ChunkingConfig
+
+    cfg = ChunkingConfig(parent_max_tokens=200, parent_target_tokens=150)
+    chunker = HybridChunker(config=cfg)
+
+    # Blocks without any headings
+    blocks = [
+        Block(
+            type=BlockType.PARAGRAPH,
+            text=f"No heading paragraph {i}: " + ("content details " * 15),
+            page=1,
+            order=i,
+        )
+        for i in range(12)
+    ]
+
+    doc = StructuredDoc(
+        doc_id="doc_no_headings",
+        title="No Headings Doc",
+        page_count=1,
+        parser_used="test",
+        blocks=blocks,
+    )
+    result = chunker.chunk(doc, config=cfg)
+
+    assert len(result.parents) >= 2
+    parent_ids = {p.parent_id for p in result.parents}
+    for c in result.children:
+        assert c.parent_id in parent_ids

@@ -6,12 +6,18 @@ under scope = 'demo' using the owner's pinned embedding model according to spec 
 
 import asyncio
 import logging
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
+# Ensure project root is in sys.path when script is executed directly
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from src.ingest.chunking.hybrid_chunker import HybridChunker
-from src.ingest.parsers.cleanup import fix_hyphenation, remove_repeated_headers_and_footers
-from src.ingest.parsers.local_pymupdf import LocalPyMuPDFParser
-from src.ingest.parsers.quality_gate import QualityGate
+from src.ingest.parsers.local_pymupdf import LocalPyMuPDFParser, extract_raw_reference_text
+from src.ingest.parsers.quality_gate import evaluate_parse_quality
 from src.retrieval.embed import CohereEmbedder
 from src.retrieval.sparse import LocalSparseVectorizer
 from src.retrieval.store import QdrantVectorStore
@@ -34,35 +40,53 @@ async def ingest_demo_document(
     """Ingest a single demo document into scope='demo'."""
     logger.info(f"Processing demo document: {pdf_path.name}")
 
-    # 1. Parse locally
+    # 1. Parse locally using PyMuPDF (no key required)
     parser = LocalPyMuPDFParser()
     doc = await parser.parse(pdf_path)
 
-    # 2. Cleanup
-    doc = remove_repeated_headers_and_footers(doc)
-    doc = fix_hyphenation(doc)
-
-    # 3. Quality Gate
-    gate = QualityGate()
-    ref_text = parser.extract_raw_reference_text(pdf_path)
-    q_res = gate.evaluate(doc, ref_text)
+    # 2. Quality Gate check
+    ref_text = extract_raw_reference_text(pdf_path)
+    q_res = evaluate_parse_quality(doc, ref_text)
     if q_res.has_warnings:
-        logger.warning(f"Quality gate warnings on {pdf_path.name}: {q_res.warning_messages}")
+        logger.warning(f"Quality gate warnings on {pdf_path.name}: {q_res.warnings}")
 
-    # 4. Chunking
+    # 3. Hybrid Chunking (structure + recursive + parent-child)
     chunk_res = chunker.chunk(doc)
     logger.info(
-        f"Generated {len(chunk_res.parents)} parents and {len(chunk_res.children)} children."
+        f"Generated {len(chunk_res.parents)} parents and {len(chunk_res.children)} children for {doc.title}."
     )
 
-    # 5. Store parents in SQL
+    # 4. Store parents and document in SQL under scope = 'demo'
     db.insert_parents(chunk_res.parents, session_id="demo")
+    with db._get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO documents (
+                doc_id, session_id, title, content_hash, page_count, parser_used, parser_version,
+                chunking_version, embedding_version, ingested_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                doc.doc_id,
+                "demo",
+                doc.title,
+                chunk_res.children[0].content_hash if chunk_res.children else "demo_hash",
+                doc.page_count,
+                "local_pymupdf",
+                doc.parser_version,
+                chunk_res.chunking_version,
+                "emb-v1",
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        conn.commit()
 
-    # 6. Compute sparse vectors locally ($0 cost)
+    # 5. Compute sparse vectors locally ($0 cost)
     texts_to_embed = [c.embedding_text for c in chunk_res.children]
     sparse_vectors = sparse_vectorizer.vectorize_batch(texts_to_embed)
 
-    # 7. Compute dense vectors
+    # 6. Compute dense vectors (Cohere Embed or fallback dummy vector in offline dev)
     if embedder:
         try:
             dense_vectors = await embedder.embed(texts_to_embed, input_type="search_document")
@@ -72,7 +96,7 @@ async def ingest_demo_document(
     else:
         dense_vectors = [[0.01] * 1024 for _ in chunk_res.children]
 
-    # 8. Upsert to Qdrant under scope = "demo"
+    # 7. Upsert to Qdrant under scope = "demo"
     count = store.upsert_chunks(
         chunks=chunk_res.children,
         dense_vectors=dense_vectors,

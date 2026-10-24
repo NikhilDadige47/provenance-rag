@@ -51,6 +51,7 @@ Thumbs.db
 uploads/
 cache/
 scratch/
+qdrant_storage/
 *.sqlite3
 *.db
 logs/

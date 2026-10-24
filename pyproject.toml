@@ -38,6 +38,7 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B", "SIM"]
 ignore = ["E501"]
+per-file-ignores = { "scripts/*" = ["E402"] }
 
 [tool.pytest.ini_options]
 minversion = "8.0"

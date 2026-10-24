@@ -530,21 +530,19 @@ rag-portfolio/
 │   │   │   ├── registry.py        # ParserRegistry (name -> adapter)
 │   │   │   ├── llamaparse.py      # adapter + normalizer
 │   │   │   ├── landingai.py       # adapter + normalizer
-│   │   │   ├── unstructured.py    # API + local adapters + normalizer
+│   │   │   ├── unstructured.py    # API + local adapters + normalizer (planned)
 │   │   │   ├── local_pymupdf.py   # no-key parser and quality-gate reference
 │   │   │   ├── structured_doc.py  # StructuredDoc / Block
-│   │   │   ├── quality_gate.py
-│   │   │   └── cache.py           # session-scoped parse cache
-│   │   ├── upload.py          # validation, page count, limits, estimate
-│   │   ├── jobs.py            # job runner, status, parser-key lifecycle (memory only)
-│   │   ├── chunk.py           # structure pass, parents, children, recursive splitter
-│   │   ├── fuse.py            # heading fusion
-│   │   ├── embed.py           # Cohere Embed adapter + local sparse
-│   │   └── store.py           # Qdrant adapter
-│   ├── retrieval/             # search.py (scope filter), rerank.py (Cohere), expand.py
-│   ├── generation/            # prompt.py, llm.py (owner default + BYOK adapters), citations.py
-│   ├── security/              # secret.py, sessions.py, redaction.py, limits.py, caps.py, killswitch.py, ttl_cleaner.py
-│   └── api/                   # main.py (FastAPI): /session /connections/test /upload /jobs/{id} /chat /usage /delete
+│   │   │   ├── quality_gate.py    # quality evaluation thresholds
+│   │   │   └── cleanup.py         # headers/footers, whitespace, hyphenation
+│   │   ├── chunking/              # hybrid chunker (structure, recursive, table, tokenizer)
+│   │   ├── upload.py              # validation, page count, limits, estimate
+│   │   └── jobs.py                # job runner, status, parser-key lifecycle (memory only)
+│   ├── retrieval/                 # embed.py (Cohere), sparse.py (local BM25), store.py (Qdrant), rerank.py
+│   ├── storage/                   # db.py (SQLite zero-secret metadata & parents store)
+│   ├── generation/                # prompt.py, llm.py (owner default + BYOK adapters), citations.py
+│   ├── security/                  # secret.py, catalog.py, context.py, egress.py, errors.py, redaction.py
+│   └── api/                       # connections.py, main.py (FastAPI)
 ├── eval/
 │   ├── golden_set.jsonl
 │   ├── run_eval.py

@@ -7,6 +7,7 @@ and tracks chunk usage against owner financial caps.
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -30,10 +31,12 @@ EMBEDDING_DIMENSION = 1024
 MAX_BATCH_SIZE = 96
 MAX_RETRIES = 3
 INITIAL_BACKOFF = 0.5
+CIRCUIT_BREAKER_THRESHOLD = 5
+CIRCUIT_BREAKER_RESET_TIMEOUT = 60.0
 
 
 class CohereEmbedder(IEmbedder):
-    """Production embedder adapter for Cohere v3 embeddings."""
+    """Production embedder adapter for Cohere v3 embeddings with circuit breaker."""
 
     def __init__(
         self,
@@ -47,6 +50,9 @@ class CohereEmbedder(IEmbedder):
         self._dimension = dimension
         self._usage_callback = usage_callback
         self._http_client = SecureHttpClient.create_async_client()
+        # Circuit breaker state
+        self._failure_count: int = 0
+        self._circuit_open_until: float = 0.0
 
     @property
     def model_name(self) -> str:
@@ -70,6 +76,16 @@ class CohereEmbedder(IEmbedder):
         """
         if not texts:
             return []
+
+        # Circuit breaker check
+        now = time.time()
+        if now < self._circuit_open_until:
+            wait_seconds = int(self._circuit_open_until - now)
+            logger.warning(f"Cohere circuit breaker OPEN. Retry in {wait_seconds}s.")
+            raise ProviderUnavailableError(
+                provider="cohere",
+                status_code=503,
+            )
 
         if not self._api_key or not self._api_key.reveal():
             raise InvalidKeyError(
@@ -140,6 +156,9 @@ class CohereEmbedder(IEmbedder):
                             status_code=500,
                         )
 
+                    # Success resets failure count
+                    self._failure_count = 0
+                    self._circuit_open_until = 0.0
                     return vectors
 
                 elif response.status_code in (401, 403):
@@ -165,6 +184,11 @@ class CohereEmbedder(IEmbedder):
                     break
                 await asyncio.sleep(backoff)
                 backoff *= 2.0
+
+        self._failure_count += 1
+        if self._failure_count >= CIRCUIT_BREAKER_THRESHOLD:
+            self._circuit_open_until = time.time() + CIRCUIT_BREAKER_RESET_TIMEOUT
+            logger.error(f"Cohere circuit breaker TRIPPED! Open for {CIRCUIT_BREAKER_RESET_TIMEOUT}s.")
 
         logger.error(f"Failed to embed batch after {MAX_RETRIES} attempts: {last_exception}")
         raise ProviderUnavailableError(

@@ -97,3 +97,40 @@ class ILLM(ABC):
     ) -> AsyncIterator[str]:
         """Stream generated tokens for the prompt."""
         pass
+
+
+class IVectorStore(ABC):
+    """Abstract contract for vector stores (e.g., Qdrant)."""
+
+    @abstractmethod
+    def upsert_chunks(
+        self,
+        chunks: list[Any],
+        dense_vectors: list[list[float]],
+        sparse_vectors: list[Any],
+        scope: str,
+        doc_metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Idempotently upsert children chunks with dense and sparse vectors under a scope."""
+        pass
+
+    @abstractmethod
+    def hybrid_search(
+        self,
+        dense_query: list[float],
+        sparse_query: Any,
+        scope: str,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Perform hybrid search with server-enforced scope isolation."""
+        pass
+
+    @abstractmethod
+    def delete_by_scope(self, scope: str) -> None:
+        """Delete all points associated with a specific session scope."""
+        pass
+
+    @abstractmethod
+    def delete_by_doc(self, doc_id: str) -> None:
+        """Delete all points associated with a specific document ID."""
+        pass

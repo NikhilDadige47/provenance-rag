@@ -12,15 +12,19 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    Fusion,
+    FusionQuery,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
+    Prefetch,
     SparseVector,
     SparseVectorParams,
     VectorParams,
 )
 
 from src.ingest.chunking.models import ChildChunk
+from src.interfaces import IVectorStore
 from src.retrieval.sparse import SparseVector as LocalSparseVector
 from src.security.config import OwnerConfig
 
@@ -32,7 +36,7 @@ SPARSE_VECTOR_NAME = "sparse"
 DENSE_DIMENSION = 1024
 
 
-class QdrantVectorStore:
+class QdrantVectorStore(IVectorStore):
     """Manages Qdrant collections, hybrid vector upserts, and scope-filtered queries."""
 
     def __init__(
@@ -47,11 +51,20 @@ class QdrantVectorStore:
         else:
             cfg = OwnerConfig.from_env()
             if cfg.qdrant_url:
-                api_key_str = cfg.qdrant_api_key.reveal() if cfg.qdrant_api_key else None
-                self._client = QdrantClient(url=cfg.qdrant_url, api_key=api_key_str)
+                try:
+                    api_key_str = cfg.qdrant_api_key.reveal() if cfg.qdrant_api_key else None
+                    remote_client = QdrantClient(url=cfg.qdrant_url, api_key=api_key_str, timeout=2.0)
+                    # Verify connectivity
+                    remote_client.get_collections()
+                    self._client = remote_client
+                except Exception as exc:
+                    logger.warning(
+                        f"Could not connect to Qdrant at {cfg.qdrant_url} ({exc}). "
+                        "Falling back to local embedded Qdrant (./qdrant_storage)."
+                    )
+                    self._client = QdrantClient(path="./qdrant_storage")
             else:
-                # In-memory client for dev/tests
-                self._client = QdrantClient(location=":memory:")
+                self._client = QdrantClient(path="./qdrant_storage")
 
         self.ensure_collection()
 
@@ -158,12 +171,13 @@ class QdrantVectorStore:
     def hybrid_search(
         self,
         dense_query: list[float],
-        sparse_query: LocalSparseVector,
+        sparse_query: LocalSparseVector | None,
         scope: str,
         limit: int = 30,
     ) -> list[dict[str, Any]]:
         """Perform hybrid search with mandatory server-enforced scope isolation.
 
+        Combines dense and sparse vectors via Reciprocal Rank Fusion (RRF).
         Ensures results strictly originate from the active session or the shared demo corpus.
         """
         # Scope filter: user session or demo corpus
@@ -175,18 +189,60 @@ class QdrantVectorStore:
 
         scope_filter = Filter(should=scope_conditions)
 
-        # Query dense vectors with scope filter
-        results = self._client.query_points(
-            collection_name=self.collection_name,
-            query=dense_query,
-            using=DENSE_VECTOR_NAME,
-            query_filter=scope_filter,
-            limit=limit,
-        ).points
+        # True hybrid RRF fusion if sparse query has active terms
+        has_sparse = (
+            sparse_query is not None
+            and bool(sparse_query.indices)
+            and bool(sparse_query.values)
+        )
 
+        if has_sparse:
+            prefetch = [
+                Prefetch(
+                    query=dense_query,
+                    using=DENSE_VECTOR_NAME,
+                    filter=scope_filter,
+                    limit=limit * 2,
+                ),
+                Prefetch(
+                    query=SparseVector(
+                        indices=sparse_query.indices,
+                        values=sparse_query.values,
+                    ),
+                    using=SPARSE_VECTOR_NAME,
+                    filter=scope_filter,
+                    limit=limit * 2,
+                ),
+            ]
+            results = self._client.query_points(
+                collection_name=self.collection_name,
+                prefetch=prefetch,
+                query=FusionQuery(fusion=Fusion.RRF),
+                limit=limit,
+            ).points
+        else:
+            # Dense fallback if no sparse terms
+            results = self._client.query_points(
+                collection_name=self.collection_name,
+                query=dense_query,
+                using=DENSE_VECTOR_NAME,
+                query_filter=scope_filter,
+                limit=limit,
+            ).points
+
+        # Query-time embedding_version validation (Roadmap P3-T8)
+        configured_version = OwnerConfig.from_env().embedding_version
         candidates: list[dict[str, Any]] = []
+
         for scored_point in results:
             payload = scored_point.payload or {}
+            point_version = payload.get("embedding_version")
+            if point_version and point_version != configured_version:
+                raise ValueError(
+                    f"Embedding version mismatch: indexed chunk has version '{point_version}', "
+                    f"configured server version is '{configured_version}'. Please re-index the collection."
+                )
+
             candidates.append(
                 {
                     "chunk_id": payload.get("chunk_id"),

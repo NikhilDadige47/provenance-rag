@@ -106,3 +106,68 @@ def test_qdrant_store_deletion():
     store.delete_by_scope("session_temp")
     results_after = store.hybrid_search(dense_query=vec, sparse_query=sparse_vec, scope="session_temp")
     assert len(results_after) == 0
+
+
+def test_qdrant_hybrid_search_rrf():
+    """Verify hybrid search with both dense and sparse vectors uses RRF fusion."""
+    client = QdrantClient(location=":memory:")
+    store = QdrantVectorStore(client=client, collection_name="test_rrf")
+
+    chunk = ChildChunk(
+        chunk_id="c_rrf",
+        doc_id="doc_rrf",
+        parent_id="p_rrf",
+        breadcrumb="Test",
+        display_text="Dense and sparse content.",
+        embedding_text="Dense and sparse content.",
+        child_tokens=10,
+        chunk_index=0,
+        page=1,
+        content_hash="hash_rrf",
+    )
+    vec = [0.2] * 1024
+    sparse_vec = SparseVector(indices=[10, 20], values=[0.8, 0.4])
+
+    store.upsert_chunks([chunk], [vec], [sparse_vec], scope="test_scope")
+
+    # True hybrid query with active sparse terms
+    results = store.hybrid_search(
+        dense_query=vec,
+        sparse_query=sparse_vec,
+        scope="test_scope",
+        limit=5,
+    )
+    assert len(results) == 1
+    assert results[0]["chunk_id"] == "c_rrf"
+
+
+def test_embedding_version_mismatch_raises():
+    """Verify that an outdated embedding_version raises an error at query time."""
+    import pytest
+    from qdrant_client.models import PointStruct
+
+    client = QdrantClient(location=":memory:")
+    store = QdrantVectorStore(client=client, collection_name="test_version_mismatch")
+
+    # Insert point with mismatched embedding_version
+    client.upsert(
+        collection_name="test_version_mismatch",
+        points=[
+            PointStruct(
+                id=1,
+                vector={"dense": [0.1] * 1024},
+                payload={
+                    "chunk_id": "c_old",
+                    "scope": "session_v",
+                    "embedding_version": "emb-v0-outdated",
+                },
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Embedding version mismatch"):
+        store.hybrid_search(
+            dense_query=[0.1] * 1024,
+            sparse_query=None,
+            scope="session_v",
+        )

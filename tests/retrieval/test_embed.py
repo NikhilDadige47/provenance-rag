@@ -43,3 +43,18 @@ async def test_embedder_batch_embedding_success():
         assert len(vectors) == 2
         assert len(vectors[0]) == 1024
         assert recorded_counts == [2]
+
+
+@pytest.mark.asyncio
+async def test_embedder_circuit_breaker_tripping():
+    """Verify circuit breaker trips and fails fast after repeated failures."""
+    import time
+
+    from src.security.errors import ProviderUnavailableError
+
+    embedder = CohereEmbedder(api_key=Secret("co-test-valid-key"))
+    embedder._failure_count = 5
+    embedder._circuit_open_until = time.time() + 60.0
+
+    with pytest.raises(ProviderUnavailableError):
+        await embedder.embed(["Immediate fail text"])

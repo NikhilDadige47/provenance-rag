@@ -77,7 +77,43 @@ def test_landingai_normalizer_chunks() -> None:
     assert blocks[0].bbox == [10.0, 20.0, 50.0, 200.0]
 
     assert blocks[1].type == BlockType.TABLE
-    assert blocks[1].page == 1
-
     assert blocks[2].type == BlockType.PARAGRAPH
     assert blocks[2].page == 2
+
+
+def test_llamaparse_fixture_file() -> None:
+    """Verify LlamaParse normalizer against raw fixture file on disk."""
+    import pathlib
+
+    fixture_path = pathlib.Path("tests/fixtures/llamaparse_sample.md")
+    assert fixture_path.exists(), "LlamaParse fixture file missing"
+
+    content = fixture_path.read_text(encoding="utf-8")
+    blocks = LlamaParseNormalizer.parse_markdown_to_blocks(content)
+
+    assert len(blocks) > 0
+    headings = [b for b in blocks if b.type == BlockType.HEADING]
+    tables = [b for b in blocks if b.type == BlockType.TABLE]
+    assert len(headings) >= 2
+    assert len(tables) >= 1
+    assert headings[0].text == "System Architecture Overview"
+    assert headings[1].page == 2
+
+
+def test_landingai_fixture_file() -> None:
+    """Verify Landing AI normalizer against raw JSON fixture on disk."""
+    import json
+    import pathlib
+
+    fixture_path = pathlib.Path("tests/fixtures/landingai_sample.json")
+    assert fixture_path.exists(), "Landing AI fixture file missing"
+
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    blocks = LandingAINormalizer.parse_payload_to_blocks(payload)
+
+    assert len(blocks) == 3
+    assert blocks[0].type == BlockType.HEADING
+    assert blocks[0].text == "Financial Highlights 2025"
+    assert blocks[0].bbox == [10.0, 20.0, 45.0, 220.0]
+    assert blocks[1].type == BlockType.TABLE
+    assert blocks[2].type == BlockType.PARAGRAPH

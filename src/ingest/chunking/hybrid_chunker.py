@@ -6,6 +6,7 @@ larger parent context sections for LLM answer synthesis.
 """
 
 import hashlib
+from typing import Literal
 
 from src.ingest.chunking.heading_stack import tag_blocks_with_breadcrumbs
 from src.ingest.chunking.models import (
@@ -50,12 +51,27 @@ class HybridChunker(IChunker):
         # Step 2: Parent Construction - group blocks by section/heading
         raw_sections = self._group_blocks_into_sections(tagged_blocks)
 
+        # Refinement: Split oversized sections (> parent_max_tokens) or no-heading docs into sub-parents
+        refined_sections: list[tuple[str, list[Block]]] = []
+        for breadcrumb, sec_blocks in raw_sections:
+            sec_text = "\n\n".join(b.text.strip() for b in sec_blocks if b.text.strip())
+            if estimate_tokens(sec_text) <= cfg.parent_max_tokens:
+                refined_sections.append((breadcrumb, sec_blocks))
+            else:
+                sub_sections = self._split_oversized_section(
+                    breadcrumb=breadcrumb,
+                    blocks=sec_blocks,
+                    target_tokens=cfg.parent_target_tokens,
+                    max_tokens=cfg.parent_max_tokens,
+                )
+                refined_sections.extend(sub_sections)
+
         parents: list[ParentChunk] = []
         children: list[ChildChunk] = []
 
         global_child_index = 0
 
-        for section_idx, (breadcrumb, section_blocks) in enumerate(raw_sections):
+        for section_idx, (breadcrumb, section_blocks) in enumerate(refined_sections):
             parent_id = self._generate_parent_id(doc_id, section_idx, breadcrumb)
 
             # Build parent text and calculate page bounds
@@ -134,6 +150,40 @@ class HybridChunker(IChunker):
             sections.append((current_breadcrumb, current_blocks))
 
         return sections
+
+    def _split_oversized_section(
+        self,
+        breadcrumb: str,
+        blocks: list[Block],
+        target_tokens: int,
+        max_tokens: int,
+    ) -> list[tuple[str, list[Block]]]:
+        """Split an oversized section or no-heading document into smaller sub-parents.
+
+        Never splits tables, code blocks, or list items across parents.
+        """
+        sub_sections: list[tuple[str, list[Block]]] = []
+        current_blocks: list[Block] = []
+        current_tokens = 0
+        part_num = 1
+
+        for block in blocks:
+            b_tokens = estimate_tokens(block.text)
+            if current_blocks and (current_tokens + b_tokens > max_tokens or current_tokens >= target_tokens):
+                sub_bcrumb = f"{breadcrumb} (Part {part_num})"
+                sub_sections.append((sub_bcrumb, current_blocks))
+                part_num += 1
+                current_blocks = [block]
+                current_tokens = b_tokens
+            else:
+                current_blocks.append(block)
+                current_tokens += b_tokens
+
+        if current_blocks:
+            sub_bcrumb = f"{breadcrumb} (Part {part_num})" if part_num > 1 else breadcrumb
+            sub_sections.append((sub_bcrumb, current_blocks))
+
+        return sub_sections
 
     def _create_children_for_section(
         self,
@@ -220,7 +270,7 @@ class HybridChunker(IChunker):
                 chunk_id = self._generate_child_id(doc_id, parent_id, len(children), content_hash)
                 embedding_text = f"[{breadcrumb}]\n\n{block.text}"
 
-                chunk_type_val = "code" if block.type == BlockType.CODE else "list"
+                chunk_type_val: Literal["code", "list"] = "code" if block.type == BlockType.CODE else "list"
                 children.append(
                     ChildChunk(
                         chunk_id=chunk_id,

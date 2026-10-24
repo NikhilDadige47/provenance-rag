@@ -1,0 +1,28 @@
+{
+  "chunks": [
+    {
+      "type": "text",
+      "markdown": "# Financial Highlights 2025",
+      "grounding": {
+        "page": 1,
+        "box": [10.0, 20.0, 45.0, 220.0]
+      }
+    },
+    {
+      "type": "table",
+      "markdown": "| Category | Revenue |\n|---|---|\n| Enterprise Cloud | $75M |\n| Professional Services | $30M |",
+      "grounding": {
+        "page": 1,
+        "box": [55.0, 20.0, 140.0, 320.0]
+      }
+    },
+    {
+      "type": "text",
+      "markdown": "Consolidated operating profit margins increased by 14% year-over-year.",
+      "grounding": {
+        "page": 2,
+        "box": [20.0, 20.0, 60.0, 280.0]
+      }
+    }
+  ]
+}
