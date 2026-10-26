@@ -210,7 +210,9 @@ class DatabaseManager:
                 "questions_owner_llm": 0,
             }
 
-    def increment_session_usage(self, session_id: str, chunks_embedded: int = 0, rerank_calls: int = 0) -> None:
+    def increment_session_usage(
+        self, session_id: str, chunks_embedded: int = 0, rerank_calls: int = 0
+    ) -> None:
         """Increment session counters for owner spend protection."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -223,4 +225,282 @@ class DatabaseManager:
                 """,
                 (chunks_embedded, rerank_calls, session_id),
             )
+            conn.commit()
+
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
+        """Fetch full session row by ID. Returns None if not found."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_daily_usage(self, date_str: str) -> dict[str, Any]:
+        """Fetch the usage_daily row for a given date string (YYYY-MM-DD).
+
+        Returns a zero-filled dict if no row exists yet.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM usage_daily WHERE date = ?", (date_str,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+        return {
+            "date": date_str,
+            "chunks_embedded": 0,
+            "rerank_calls": 0,
+            "owner_llm_tokens": 0,
+            "jobs": 0,
+        }
+
+    def list_expired_sessions(self, now_iso: str) -> list[str]:
+        """Return session IDs whose expires_at is non-null and in the past."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT session_id FROM sessions
+                WHERE expires_at IS NOT NULL AND expires_at < ?
+                """,
+                (now_iso,),
+            )
+            return [row["session_id"] for row in cursor.fetchall()]
+
+    def create_job(
+        self,
+        job_id: str,
+        session_id: str,
+        parser_name: str,
+        doc_id: str | None = None,
+        status: str = "queued",
+    ) -> dict[str, Any]:
+        """Create a new job record."""
+        now_iso = datetime.now(UTC).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO jobs (job_id, session_id, doc_id, parser_name, status, started_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (job_id, session_id, doc_id, parser_name, status, now_iso),
+            )
+            conn.commit()
+        return {
+            "job_id": job_id,
+            "session_id": session_id,
+            "doc_id": doc_id,
+            "parser_name": parser_name,
+            "status": status,
+            "started_at": now_iso,
+        }
+
+    def update_job(
+        self,
+        job_id: str,
+        status: str,
+        error_message: str | None = None,
+        pages: int = 0,
+        chunks: int = 0,
+        quality_flags: str | None = None,
+        doc_id: str | None = None,
+    ) -> None:
+        """Update job status and results."""
+        finished_at = datetime.now(UTC).isoformat() if status in ("ready", "failed") else None
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if doc_id:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = ?, error_message = ?, pages = ?, chunks = ?, quality_flags = ?, finished_at = ?, doc_id = ?
+                    WHERE job_id = ?
+                    """,
+                    (
+                        status,
+                        error_message,
+                        pages,
+                        chunks,
+                        quality_flags,
+                        finished_at,
+                        doc_id,
+                        job_id,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = ?, error_message = ?, pages = ?, chunks = ?, quality_flags = ?, finished_at = ?
+                    WHERE job_id = ?
+                    """,
+                    (status, error_message, pages, chunks, quality_flags, finished_at, job_id),
+                )
+            conn.commit()
+
+    def get_job(self, job_id: str, session_id: str | None = None) -> dict[str, Any] | None:
+        """Fetch job by ID, optionally verifying session ownership."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if session_id:
+                cursor.execute(
+                    "SELECT * FROM jobs WHERE job_id = ? AND session_id = ?",
+                    (job_id, session_id),
+                )
+            else:
+                cursor.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def insert_document(
+        self,
+        doc_id: str,
+        session_id: str,
+        title: str,
+        content_hash: str,
+        page_count: int,
+        parser_used: str,
+        parser_version: str = "1.0",
+        quality_flags: str | None = None,
+        chunking_version: str = "hybrid-v1",
+        embedding_version: str = "emb-v1",
+    ) -> None:
+        """Insert metadata for an ingested document."""
+        now_iso = datetime.now(UTC).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO documents (
+                    doc_id, session_id, title, content_hash, page_count,
+                    parser_used, parser_version, quality_flags,
+                    chunking_version, embedding_version, ingested_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    doc_id,
+                    session_id,
+                    title,
+                    content_hash,
+                    page_count,
+                    parser_used,
+                    parser_version,
+                    quality_flags,
+                    chunking_version,
+                    embedding_version,
+                    now_iso,
+                ),
+            )
+            conn.commit()
+
+    def list_documents(self, session_id: str) -> list[dict[str, Any]]:
+        """List all documents belonging to a session."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM documents WHERE session_id = ? ORDER BY ingested_at DESC",
+                (session_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_document(self, doc_id: str, session_id: str | None = None) -> dict[str, Any] | None:
+        """Fetch document metadata by doc_id and optional session_id."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if session_id:
+                cursor.execute(
+                    "SELECT * FROM documents WHERE doc_id = ? AND session_id = ?",
+                    (doc_id, session_id),
+                )
+            else:
+                cursor.execute("SELECT * FROM documents WHERE doc_id = ?", (doc_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def delete_document(self, doc_id: str, session_id: str) -> None:
+        """Delete document and its parent records from SQL."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM parents WHERE doc_id = ? AND session_id = ?",
+                (doc_id, session_id),
+            )
+            cursor.execute(
+                "DELETE FROM documents WHERE doc_id = ? AND session_id = ?",
+                (doc_id, session_id),
+            )
+            cursor.execute(
+                """
+                UPDATE sessions
+                SET docs_count = MAX(0, docs_count - 1)
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            )
+            conn.commit()
+
+    def get_parse_cache(
+        self, session_id: str, content_hash: str, parser: str, parser_version: str
+    ) -> str | None:
+        """Retrieve raw parsed StructuredDoc JSON from session cache."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT raw_result_blob FROM parse_cache
+                WHERE session_id = ? AND content_hash = ? AND parser = ? AND parser_version = ?
+                """,
+                (session_id, content_hash, parser, parser_version),
+            )
+            row = cursor.fetchone()
+            return row["raw_result_blob"] if row else None
+
+    def set_parse_cache(
+        self,
+        session_id: str,
+        content_hash: str,
+        parser: str,
+        parser_version: str,
+        raw_result_blob: str,
+    ) -> None:
+        """Store parsed StructuredDoc JSON into session cache."""
+        now_iso = datetime.now(UTC).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO parse_cache (
+                    session_id, content_hash, parser, parser_version, raw_result_blob, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, content_hash, parser, parser_version, raw_result_blob, now_iso),
+            )
+            conn.commit()
+
+    def record_document_ingestion(self, session_id: str, pages: int, chunks: int) -> None:
+        """Atomically record document ingestion in session usage counters."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sessions
+                SET docs_count = docs_count + 1,
+                    pages_used = pages_used + ?,
+                    chunks_embedded = chunks_embedded + ?
+                WHERE session_id = ?
+                """,
+                (pages, chunks, session_id),
+            )
+            conn.commit()
+
+    def delete_session_data(self, session_id: str) -> None:
+        """Cascade delete all records for a session (parents, documents, jobs, cache, session)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM parents WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM documents WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM jobs WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM parse_cache WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             conn.commit()

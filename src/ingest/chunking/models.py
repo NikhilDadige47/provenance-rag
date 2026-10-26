@@ -14,14 +14,24 @@ class ChunkingConfig(BaseModel):
 
     child_target_tokens: int = Field(default=300, description="Target token size for children")
     child_max_tokens: int = Field(default=450, description="Hard cap on child token size")
-    child_min_tokens: int = Field(default=120, description="Minimum tokens below which chunks merge")
-    child_overlap: float = Field(default=0.12, description="Token overlap ratio when splitting paragraphs")
+    child_min_tokens: int = Field(
+        default=120, description="Minimum tokens below which chunks merge"
+    )
+    child_overlap: float = Field(
+        default=0.12, description="Token overlap ratio when splitting paragraphs"
+    )
 
-    parent_target_tokens: int = Field(default=1000, description="Target token size for parent sections")
+    parent_target_tokens: int = Field(
+        default=1000, description="Target token size for parent sections"
+    )
     parent_max_tokens: int = Field(default=1500, description="Maximum token size for parents")
-    fallback_parent_tokens: int = Field(default=1000, description="Target parent size for no-heading docs")
+    fallback_parent_tokens: int = Field(
+        default=1000, description="Target parent size for no-heading docs"
+    )
 
-    table_max_tokens: int = Field(default=800, description="Max table tokens before row-wise splitting")
+    table_max_tokens: int = Field(
+        default=800, description="Max table tokens before row-wise splitting"
+    )
     prefix_max_tokens: int = Field(default=60, description="Cap on heading breadcrumb tokens")
     window_neighbors: int = Field(default=1, description="Adjacent child window count")
 

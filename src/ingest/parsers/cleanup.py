@@ -33,7 +33,9 @@ def normalize_whitespace_and_unicode(text: str) -> str:
     # Replace non-breaking spaces and zero-width spaces with regular space
     normalized = normalized.replace("\u00a0", " ").replace("\u200b", "")
     # Remove control characters except tab and newline
-    normalized = "".join(ch for ch in normalized if ch in "\t\n\r" or unicodedata.category(ch)[0] != "C")
+    normalized = "".join(
+        ch for ch in normalized if ch in "\t\n\r" or unicodedata.category(ch)[0] != "C"
+    )
     # Clean up multi-space lines while preserving intentional line breaks
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in normalized.splitlines()]
     return "\n".join(lines).strip()

@@ -43,7 +43,10 @@ def validate_question(question: str) -> tuple[bool, str | None]:
         return False, "Question cannot be empty."
 
     if len(clean_q) > MAX_QUESTION_LENGTH:
-        return False, f"Question exceeds maximum allowed length of {MAX_QUESTION_LENGTH} characters."
+        return (
+            False,
+            f"Question exceeds maximum allowed length of {MAX_QUESTION_LENGTH} characters.",
+        )
 
     for pattern in INJECTION_PATTERNS:
         if pattern.search(clean_q):
@@ -69,7 +72,7 @@ def build_generation_prompt(
 
     for idx, passage in enumerate(passages, start=1):
         header = f"[{idx}] Source: {passage.title or 'Document'} | Page: {passage.page} | Section: {passage.breadcrumb}"
-        block = f"{header}\n\"\"\"\n{passage.text.strip()}\n\"\"\""
+        block = f'{header}\n"""\n{passage.text.strip()}\n"""'
         context_blocks.append(block)
 
     formatted_context = "\n\n".join(context_blocks) if context_blocks else "No context available."

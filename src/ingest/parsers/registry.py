@@ -31,9 +31,7 @@ class ParserRegistry:
         """Retrieve parser by name."""
         name_clean = name.strip().lower()
         if name_clean not in self._parsers:
-            raise KeyError(
-                f"Unknown parser '{name}'. Available: {list(self._parsers.keys())}"
-            )
+            raise KeyError(f"Unknown parser '{name}'. Available: {list(self._parsers.keys())}")
         return self._parsers[name_clean]
 
     def is_valid_parser(self, name: str) -> bool:

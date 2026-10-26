@@ -57,12 +57,10 @@ def test_split_markdown_table():
 
 def test_recursive_splitter():
     """Verify text is split along natural boundaries with overlap."""
-    splitter = RecursiveTokenSplitter(target_tokens=30, max_tokens=50, min_tokens=10, overlap_ratio=0.2)
-    sample_text = (
-        "Alpha beta gamma delta. " * 10
-        + "\n\n"
-        + "Epsilon zeta eta theta. " * 10
+    splitter = RecursiveTokenSplitter(
+        target_tokens=30, max_tokens=50, min_tokens=10, overlap_ratio=0.2
     )
+    sample_text = "Alpha beta gamma delta. " * 10 + "\n\n" + "Epsilon zeta eta theta. " * 10
 
     chunks = splitter.split_text(sample_text)
     assert len(chunks) >= 2
@@ -79,10 +77,22 @@ def test_hybrid_chunker_end_to_end():
         parser_used="test_parser",
         blocks=[
             Block(type=BlockType.HEADING, text="Executive Summary", level=1, page=1, order=0),
-            Block(type=BlockType.PARAGRAPH, text="Q3 revenue grew by 15% year-over-year.", page=1, order=1),
-            Block(type=BlockType.TABLE, text="| Metric | Q3 |\n|---|---|\n| Revenue | $15M |", page=1, order=2),
+            Block(
+                type=BlockType.PARAGRAPH,
+                text="Q3 revenue grew by 15% year-over-year.",
+                page=1,
+                order=1,
+            ),
+            Block(
+                type=BlockType.TABLE,
+                text="| Metric | Q3 |\n|---|---|\n| Revenue | $15M |",
+                page=1,
+                order=2,
+            ),
             Block(type=BlockType.HEADING, text="Risk Factors", level=1, page=2, order=3),
-            Block(type=BlockType.PARAGRAPH, text="Supply chain constraints in APAC.", page=2, order=4),
+            Block(
+                type=BlockType.PARAGRAPH, text="Supply chain constraints in APAC.", page=2, order=4
+            ),
         ],
     )
 
@@ -134,9 +144,7 @@ def test_oversized_section_splitting():
     chunker = HybridChunker(config=cfg)
 
     # 10 paragraphs of 30 words each ~= 400 tokens total in a single section
-    blocks = [
-        Block(type=BlockType.HEADING, text="Large Section", level=1, page=1, order=0)
-    ]
+    blocks = [Block(type=BlockType.HEADING, text="Large Section", level=1, page=1, order=0)]
     for i in range(1, 11):
         blocks.append(
             Block(

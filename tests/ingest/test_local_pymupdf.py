@@ -21,14 +21,18 @@ def sample_pdf_path(tmp_path: Path) -> Path:
     # Page 1
     page1 = doc.new_page()
     page1.insert_text((50, 70), "Quarterly Financial Overview", fontsize=18)
-    page1.insert_text((50, 120), "Company revenue increased significantly this fiscal year.", fontsize=11)
+    page1.insert_text(
+        (50, 120), "Company revenue increased significantly this fiscal year.", fontsize=11
+    )
     page1.insert_text((50, 160), "Key Operational Highlights", fontsize=14)
     page1.insert_text((50, 200), "- Expanded infrastructure capacity", fontsize=11)
 
     # Page 2
     page2 = doc.new_page()
     page2.insert_text((50, 70), "Future Outlook", fontsize=18)
-    page2.insert_text((50, 120), "Projected sustained growth across all customer segments.", fontsize=11)
+    page2.insert_text(
+        (50, 120), "Projected sustained growth across all customer segments.", fontsize=11
+    )
 
     doc.save(str(pdf_path))
     doc.close()
@@ -62,4 +66,6 @@ async def test_local_pymupdf_parser(sample_pdf_path: Path) -> None:
     headings = doc.get_headings()
     assert len(headings) >= 1
     heading_texts = [h.text for h in headings]
-    assert any("Quarterly Financial Overview" in ht or "Future Outlook" in ht for ht in heading_texts)
+    assert any(
+        "Quarterly Financial Overview" in ht or "Future Outlook" in ht for ht in heading_texts
+    )

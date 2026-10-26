@@ -206,9 +206,7 @@ class CohereReranker(IReranker):
             status_code=500,
         ) from last_error
 
-    def _build_fallback_results(
-        self, documents: list[str], top_n: int
-    ) -> list[dict[str, Any]]:
+    def _build_fallback_results(self, documents: list[str], top_n: int) -> list[dict[str, Any]]:
         """Preserve original hybrid search ordering when reranker is unavailable."""
         return [
             {

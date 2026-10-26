@@ -104,7 +104,9 @@ def test_qdrant_store_deletion():
 
     # Delete scope
     store.delete_by_scope("session_temp")
-    results_after = store.hybrid_search(dense_query=vec, sparse_query=sparse_vec, scope="session_temp")
+    results_after = store.hybrid_search(
+        dense_query=vec, sparse_query=sparse_vec, scope="session_temp"
+    )
     assert len(results_after) == 0
 
 

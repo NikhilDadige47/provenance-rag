@@ -3,7 +3,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0+-green.svg)](https://fastapi.tiangolo.com/)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-2.9.0+-blue.svg)](https://docs.pydantic.dev/)
-[![Pytest](https://img.shields.io/badge/pytest-83%20passed-brightgreen.svg)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/pytest-166%20passed-brightgreen.svg)](https://docs.pytest.org/)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
 > A production-grade, financially isolated Retrieval-Augmented Generation (RAG) framework designed to eliminate wallet drain, protect visitor API keys, prevent SSRF attacks, and guarantee document parsing quality before embedding.
@@ -19,10 +19,12 @@
 6. [📑 Phase 2: Parser Layer, Universal Normalization & Quality Gate](#-phase-2-parser-layer-universal-normalization--quality-gate)
 7. [🧩 Phase 3: Hybrid Chunker, Heading Fusion, Dual Embeddings & Qdrant Storage](#-phase-3-hybrid-chunker-heading-fusion-dual-embeddings--qdrant-storage)
 8. [🎯 Phase 4: Hybrid Retrieval, Cohere Rerank, Generation & Interactive CLI](#-phase-4-hybrid-retrieval-cohere-rerank-generation--interactive-cli)
-9. [🔍 Real-World Walkthrough: Trace of an Uploaded Document](#-real-world-walkthrough-trace-of-an-uploaded-document)
-10. [🗺️ Codebase Directory Map (Organized by Phase)](#️-codebase-directory-map-organized-by-phase)
-11. [🚀 How to Run and Verify](#-how-to-run-and-verify)
-12. [📈 Master Roadmap & Phase-by-Phase Progress](#-master-roadmap--phase-by-phase-progress)
+9. [🌐 Phase 5: REST API, Sessions, Demo Mode & Owner Cost Controls](#-phase-5-rest-api-sessions-demo-mode--owner-cost-controls)
+10. [📤 Phase 6: Upload Flow, Asynchronous Jobs & Data Lifecycle](#-phase-6-upload-flow-asynchronous-jobs--data-lifecycle)
+11. [🔍 Real-World Walkthrough: Trace of an Uploaded Document](#-real-world-walkthrough-trace-of-an-uploaded-document)
+12. [🗺️ Codebase Directory Map (Organized by Phase)](#️-codebase-directory-map-organized-by-phase)
+13. [🚀 How to Run and Verify](#-how-to-run-and-verify)
+14. [📈 Master Roadmap & Phase-by-Phase Progress](#-master-roadmap--phase-by-phase-progress)
 
 ---
 
@@ -128,10 +130,10 @@ Defines standard abstract base classes (`IParser`, `IChunker`, `IEmbedder`, `IRe
 * **Why it matters:** If an engineer accidentally writes `logger.info(f"Connecting with {key}")`, a plain string leaks to disk. With `Secret`:
   ```python
   key = Secret("sk-live-secret-key-12345")
-  print(key)          # Prints: ***
-  print(repr(key))    # Prints: Secret('***')
+  print(key)  # Prints: ***
+  print(repr(key))  # Prints: Secret('***')
   dict_payload = {"key": key}
-  json.dumps(...)     # Serializes as: {"key": "***"}
+  json.dumps(...)  # Serializes as: {"key": "***"}
   ```
   The raw value can only be retrieved by explicitly invoking `key.reveal()`, which is called solely when constructing the final HTTP request to the authorized provider.
 
@@ -214,12 +216,13 @@ Different parsers output completely different formats (LlamaParse outputs Markdo
 We translate all of them into a single typed contract:
 ```python
 class Block(BaseModel):
-    type: BlockType       # HEADING, PARAGRAPH, LIST_ITEM, TABLE, CODE, FIGURE, CAPTION
-    text: str             # Cleaned text (tables formatted as Markdown)
-    level: int | None     # 1..6 if heading, otherwise None
-    page: int             # 1-indexed page number
-    bbox: list[float]     # [top, left, bottom, right] coordinates (for citation highlighting)
-    order: int            # Sequential reading order
+    type: BlockType  # HEADING, PARAGRAPH, LIST_ITEM, TABLE, CODE, FIGURE, CAPTION
+    text: str  # Cleaned text (tables formatted as Markdown)
+    level: int | None  # 1..6 if heading, otherwise None
+    page: int  # 1-indexed page number
+    bbox: list[float]  # [top, left, bottom, right] coordinates (for citation highlighting)
+    order: int  # Sequential reading order
+
 
 class StructuredDoc(BaseModel):
     doc_id: str
@@ -543,6 +546,241 @@ Bypasses Cohere Rerank to test raw dense+sparse hybrid retrieval order against t
 
 ---
 
+## 🌐 Phase 5: REST API, Sessions, Demo Mode & Owner Cost Controls
+
+> **Phase 5 Goal:** Expose the complete RAG pipeline as a production-grade, secure REST API (FastAPI) where anyone can chat on the demo corpus with zero API keys (Tier A), with rigorous server-derived scope isolation, atomic per-session spend caps, per-IP rate limiting, dynamic kill switches, and non-content privacy logging.
+
+### 1. Server-Derived Scope & Multi-Tenant Session Isolation (`src/api/sessions.py`)
+In public multi-tenant RAG applications, **clients must never specify or influence their search scope**. 
+* **Session Issuance (`POST /session`):** Generates a 32-byte cryptographically random hex token with an explicit TTL (`expires_at`), stored in SQLite.
+* **Server-Controlled Scope:** The `get_current_session` FastAPI dependency maps the session token to either `scope = "demo"` (Tier A) or `scope = session_id` (Tiers B & C). Any user-supplied filters or scopes are strictly discarded.
+* **Cross-Session Privacy:** Multi-tenant isolation tests prove that Session A can never retrieve documents, chunks, or parent passages indexed by Session B, even if knowing the document ID.
+
+### 2. 7-Gate Security & Cost Guard Sequence (`src/api/chat.py`)
+Every question sent to `POST /chat` passes through seven defensive gates **before any paid API call** is executed:
+
+```
+[ POST /chat Request ]
+        │
+        ▼
+1. Input Screen Gate      ──▶ Max length (1,000 chars) & prompt injection screening
+        │
+        ▼
+2. IP Rate-Limit Gate     ──▶ In-memory sliding window (10 req/min) & daily IP limit
+        │
+        ▼
+3. Kill Switch Gate       ──▶ Immediate owner block (KILL_SWITCH_DISABLE_OWNER_LLM)
+        │
+        ▼
+4. Session Cap Gate       ──▶ Atomic SQLite counter check (Max 15 owner questions)
+        │
+        ▼
+5. Rerank Quota Gate      ──▶ Session rerank cap check (Max 30 calls)
+        │
+        ▼
+6. Not-Found Gate         ──▶ Cohere rerank score < 0.25? Refuse early ($0 LLM spent)
+        │
+        ▼
+7. Output Token Cap Gate  ──▶ Owner LLM capped to 1,024 max output tokens
+        │
+        ▼
+[ Verified Answer + Provenance Sources ]
+```
+
+### 3. Owner Cost Caps, "Demo at Capacity" & Kill Switch (`src/api/caps.py`)
+* **Atomic Counter Increments:** SQLite transactions update question, rerank, and chunk counters atomically to prevent race conditions from concurrent browser tabs.
+* **Global Daily Budgets (`usage_daily`):** Tracks total daily spend across all users. If owner daily limits are reached, the system flips to **"Demo at capacity"** mode (returns a friendly capacity message without calling paid models).
+* **Dynamic Kill Switch:** Instant blocking for owner LLM or document uploads via `.env` or runtime flags without redeploying code.
+* **Scope Mutation Guard:** Prevents any visitor session from modifying or writing chunks into the pre-indexed `demo` scope.
+
+### 4. Privacy-Safe Structured Logging (`src/api/logging.py`)
+* **Strict Non-Content Logging:** Logs only operational metadata (`request_id`, `tier`, `duration_ms`, `tokens_used`, string lengths).
+* **Zero Content Leakage:** Question text, answer text, and document snippets are **never written to disk or application logs**.
+* **Automatic Key Redaction:** Regular expressions detect and mask accidental provider API key strings in log strings.
+
+### 5. API Endpoints Reference
+
+| Method | Endpoint | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/health` | None | Liveness probe for load balancers & uptime monitors (`status: ok`) |
+| `GET` | `/examples` | None | Clickable demo question chips for Tier A (zero setup) |
+| `POST` | `/session` | None | Issues a secure session token & server-derived scope |
+| `GET` | `/usage` | Bearer Token | Live remaining allowance for the frontend meter |
+| `POST` | `/connections/test` | None | Tests visitor-supplied API keys in RAM (never stored) |
+| `POST` | `/chat` | Bearer Token | Runs the 7-gate RAG pipeline with verified source cards |
+
+---
+
+### 🧪 How to Test Phase 5 API Endpoints
+
+#### 1. Start the API Server
+```powershell
+python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+Interactive Swagger documentation is available at: **[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)**.
+
+#### 2. Run Automated Test Suite (60 Tests)
+```powershell
+python -m pytest tests/api/ -v
+```
+
+#### 3. Step-by-Step Testing Commands
+
+##### Step A: System Health Probe
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -Method GET
+```
+**Output:**
+```json
+{
+  "status": "ok",
+  "version": "1.0.0"
+}
+```
+
+##### Step B: Fetch Example Question Chips (No Auth Required)
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/examples" -Method GET
+```
+**Output:**
+```json
+{
+  "examples": [
+    {
+      "id": "ex_1",
+      "question": "What is Provenance RAG and how does it cite its sources?",
+      "category": "overview"
+    },
+    {
+      "id": "ex_2",
+      "question": "How does the hybrid chunking algorithm combine recursive splitting with parent-child chunks?",
+      "category": "technical"
+    }
+  ]
+}
+```
+
+##### Step C: Start a Visitor Session
+```powershell
+$session = Invoke-RestMethod -Uri "http://127.0.0.1:8000/session" -Method POST
+$token = $session.session_id
+Write-Host "Created Session: $token | Scope: $($session.scope)"
+```
+**Output:**
+```json
+{
+  "session_id": "e4b6c31828f7481ba921e3f2aa61198e",
+  "tier": "tier_a",
+  "scope": "demo",
+  "expires_at": "2026-10-27T10:00:00Z"
+}
+```
+
+##### Step D: Inspect Live Usage Meter
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/usage" `
+  -Method GET `
+  -Headers @{ "Authorization" = "Bearer $token" }
+```
+**Output:**
+```json
+{
+  "session_id": "e4b6c31828f7481ba921e3f2aa61198e",
+  "tier": "tier_a",
+  "questions_used": 0,
+  "questions_remaining": 15,
+  "documents_uploaded": 0,
+  "documents_remaining": 3,
+  "chunks_embedded": 0,
+  "chunks_remaining": 50,
+  "owner_llm_capped": false,
+  "demo_at_capacity": false,
+  "resets_at": "2026-10-27T00:00:00Z"
+}
+```
+
+##### Step E: Test a Visitor API Key Safely ($0 Cost, Never Stored)
+```powershell
+$testKeyBody = @{ provider = "openai"; key = "sk-test-fakekey" } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/connections/test" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body $testKeyBody
+```
+**Output:**
+```json
+{
+  "provider": "openai",
+  "status": "invalid_key",
+  "message": "Invalid API key provided for openai."
+}
+```
+
+##### Step F: Ask a Question via RAG Pipeline
+```powershell
+$chatBody = @{
+  question = "What is Provenance RAG and how does it cite its sources?"
+  history = @()
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/chat" `
+  -Method POST `
+  -Headers @{ "Authorization" = "Bearer $token" } `
+  -ContentType "application/json" `
+  -Body $chatBody
+```
+**Output:**
+```json
+{
+  "answer": "Provenance RAG is a hybrid retrieval-augmented generation framework that grounds responses in structured documents and audits every cited passage [1].",
+  "sources": [
+    {
+      "source_id": "1",
+      "breadcrumb": "Architecture > Overview",
+      "page_number": 1,
+      "snippet": "Provenance RAG links every claim to source parent sections.",
+      "score": 0.94
+    }
+  ],
+  "not_found": false,
+  "tier": "tier_a",
+  "duration_ms": 420.5,
+  "tokens_used": 185
+}
+```
+
+---
+
+## 📤 Phase 6: Upload Flow, Asynchronous Jobs & Data Lifecycle
+
+Phase 6 implements the complete Tier B and Tier C document upload pipeline, background asynchronous job runner, quality gate evaluation, automatic local fallback, session parse cache, and leak-proof data cleanup:
+
+### 1. Pre-flight Validation & Chunk Estimation (`POST /upload/validate`)
+* **Magic-bytes validation:** Enforces `%PDF-` signature; immediately rejects disguised non-PDF binaries (`400 Bad Request`).
+* **Size Cap:** Enforces hard 10MB limit per uploaded file (`413 Content Too Large`).
+* **Encryption Check:** Rejects encrypted or password-protected PDFs (`422 Unprocessable Entity`) before any parsing resources are wasted.
+* **Fast Page Count:** Uses PyMuPDF's low-level header inspection (4ms) to count pages.
+* **Session Quotas:** Verifies document page limits (max 30 pages/doc), session document counts (max 5 docs), and total session page limits (max 50 pages).
+* **Chunk & Allowance Estimation:** Previews expected chunk counts and session quota consumption before committing.
+
+### 2. Asynchronous Ingestion Job Runner (`src/api/jobs.py` & `POST /upload`, `GET /jobs/{id}`)
+* **Non-Blocking Background Worker:** `POST /upload` validates the file, registers a job in SQLite, and immediately returns `202 Accepted` with a `job_id`.
+* **Predictable State Machine:** Transitions cleanly through `queued` $\to$ `parsing` $\to$ `chunking` $\to$ `embedding` $\to$ `indexing` $\to$ `ready` (or `failed`).
+* **Ephemeral Visitor Parser Key Lifecycle:** If a visitor supplies an optional parser key (e.g. for LlamaParse), the secret is kept in memory solely for that job and **guaranteed to be shredded in a `finally` block**—it is never written to SQLite, logs, or disk.
+* **Pre-Embedding Quality Gate:** Evaluates text coverage, heading sanity, and garbled symbols. Non-blocking warnings are recorded on the job without crashing the pipeline.
+* **Automatic Local Fallback:** If a visitor cloud parser fails (network timeout, rate limit, invalid key), the runner gracefully re-parses using `local_pymupdf` ($0 cost), ensuring the user still gets a searchable document.
+
+### 3. Session-Scoped Parse Cache
+* Caches raw parse trees in SQLite keyed strictly by `(session_id, content_hash, parser, parser_version)`.
+* Completely free of API keys or credentials; cannot be accessed across different sessions.
+
+### 4. Data Lifecycle & "Delete My Data" (`DELETE /session`, TTL Cleaner)
+* **Instant Hard Wipe (`DELETE /session`):** Requires zero visitor keys. Immediately deletes all vector embeddings in Qdrant matching `scope == session_id`, wipes all SQLite session rows, parents, documents, jobs, and cached parse trees.
+* **Single Document Deletion (`DELETE /session/documents/{doc_id}`):** Deletes document vectors and parent blocks while recalculating session usage.
+* **Background TTL Cleaner:** An async task runs every 5 minutes purging expired sessions automatically.
+
+---
+
 ## 🔍 Real-World Walkthrough: Trace of an Uploaded Document
 
 Here is a step-by-step trace of how a real document is processed from start to finish:
@@ -720,7 +958,12 @@ provenance-rag/
 │   │
 │   ├── cli.py                     # [Phase 4] Interactive CLI interface (python -m src.cli ask "...")
 │   │
-│   └── api/
+│   └── api/                       # [Phase 5] FastAPI REST API & Session Security
+│       ├── main.py                # [Phase 5] FastAPI application factory, CORS, request-ID middleware & error handlers
+│       ├── sessions.py            # [Phase 5] Session issuance, tier detection & server-derived scope dependency
+│       ├── caps.py                # [Phase 5] Owner spend caps, IP rate limits, kill switch & daily budgets
+│       ├── chat.py                # [Phase 5] 7-gate chat endpoint, usage meter & demo chips
+│       ├── logging.py             # [Phase 5] Privacy-safe structured logging & key leak scrubber
 │       └── connections.py         # [Phase 1] verify_provider_connection pre-flight testing service
 │
 └── tests/
@@ -753,11 +996,18 @@ provenance-rag/
     ├── storage/                   # [Phase 3] 3 relational storage unit tests
     │   └── test_db.py             # [Phase 3] Zero-secret schema audit, parent fetch, and session usage tests
     │
-    └── generation/                # [Phase 4] 11 prompt, citation, and LLM adapter unit tests
-        ├── test_prompt.py         # [Phase 4] Question validation, injection blocking, and prompt tests
-        ├── test_citations.py      # [Phase 4] Citation index extraction and hallucination audit tests
-        ├── test_llm.py            # [Phase 4] Groq, OpenAI, and Anthropic streaming and error tests
-        └── test_rewrite.py        # [Phase 4] First-turn bypass and conversational rewriting tests
+    ├── generation/                # [Phase 4] 11 prompt, citation, and LLM adapter unit tests
+    │   ├── test_prompt.py         # [Phase 4] Question validation, injection blocking, and prompt tests
+    │   ├── test_citations.py      # [Phase 4] Citation index extraction and hallucination audit tests
+    │   ├── test_llm.py            # [Phase 4] Groq, OpenAI, and Anthropic streaming and error tests
+    │   └── test_rewrite.py        # [Phase 4] First-turn bypass and conversational rewriting tests
+    │
+    └── api/                       # [Phase 5] 60 REST API, session & cost control unit tests
+        ├── test_sessions.py       # [Phase 5] Session creation, TTL, tier detection & server-derived scope tests
+        ├── test_caps.py           # [Phase 5] Spend caps, per-IP rate limits, daily budgets & kill switch tests
+        ├── test_demo.py           # [Phase 5] Demo mode (Tier A), read-only isolation & usage meter tests
+        ├── test_privacy_logging.py# [Phase 5] Privacy-safe logging & credential leak grep tests
+        └── test_isolation.py      # [Phase 5] Multi-tenant cross-session data isolation tests
 ```
 
 ---
@@ -777,16 +1027,17 @@ pip install -e ".[dev]"
 ```
 
 ### 2. Run All Automated Tests
-To execute the complete suite of **83 tests**:
+To execute the complete suite of **166 tests**:
 ```powershell
 .venv\Scripts\pytest -v
 ```
-You will see 83 green passes:
-* `tests/security/` (22 tests verifying secret masking, log filters, egress blocking, and zero leaks - **Phase 1**)
+You will see 166 green passes:
+* `tests/security/` (23 tests verifying secret masking, log filters, egress blocking, and zero leaks in upload/jobs - **Phase 1 & 6**)
 * `tests/ingest/` (24 tests verifying document parsing, cleanup rules, normalizers, quality gates, hybrid chunking, and demo ingestion - **Phase 2 & 3**)
 * `tests/retrieval/` (10 tests verifying Cohere embedding batching, local BM25 sparse vectors, Qdrant scope isolation, Cohere reranking, not-found gate, and parent expansion - **Phase 3 & 4**)
 * `tests/storage/` (3 tests verifying zero-key schema security, parent context retrieval, and usage tracking - **Phase 3**)
 * `tests/generation/` (11 tests verifying question validation, injection protection, citation audits, LLM streaming adapters, and query rewrite - **Phase 4**)
+* `tests/api/` (95 tests verifying sessions, atomic caps, upload validation, background job runner, local fallback, lifecycle deletions, and multi-tenant isolation - **Phase 5 & 6**)
 
 ### 3. Run Code Quality & Linting
 ```powershell
@@ -794,7 +1045,14 @@ You will see 83 green passes:
 ```
 Output: `All checks passed!`
 
-### 4. Interactive CLI Q&A
+### 4. Run the REST API Server
+```powershell
+python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+* **Interactive Swagger UI:** Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) in your browser.
+* **OpenAPI ReDoc:** Open [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc).
+
+### 5. Interactive CLI Q&A
 ```powershell
 # Ask questions over the demo corpus
 python -m src.cli ask "What is Acme Corporation's debt-to-equity ratio?"
@@ -856,9 +1114,24 @@ python -m src.cli ask "What is Acme Corporation's debt-to-equity ratio?" --disab
   - [x] `src/generation/citations.py` (Citation audit catching hallucinations and enriching verified sources with page/breadcrumbs)
   - [x] `src/generation/rewrite.py` (Conditional query rewrite for multi-turn follow-ups, 0 cost on turn 1)
   - [x] `src/cli.py` (Interactive CLI tool: answer streaming, source provenance, timings, and ablation flags)
-  - [x] 28 new Phase 4 unit tests (83 total passing tests across the repo)
-- [ ] *Up Next:* **Phase 5: API, Sessions, Demo Mode & Owner Cost Controls**
-- [ ] *Up Next:* **Phase 6: Upload Flow, Jobs & Data Lifecycle**
+  - [x] 28 Phase 4 unit tests
+- [x] **Phase 5: API, Sessions, Demo Mode & Owner Cost Controls**
+  - [x] `src/api/sessions.py` (Cryptographic session tokens, TTL, server-derived scope mapping, and tier classification)
+  - [x] `src/api/caps.py` (Per-IP sliding-window rate limiting, atomic per-session caps, global daily budgets & kill switch)
+  - [x] `src/api/chat.py` (Full 7-gate RAG endpoint: input screening, rate limit, kill switch, caps, rerank, not-found gate & token caps)
+  - [x] `src/api/chat.py` (Live `/usage` meter endpoint & `/examples` demo question chips)
+  - [x] `src/api/logging.py` (Privacy-safe structured logging: operational metadata only, zero question/document/key leakage)
+  - [x] `src/api/main.py` (FastAPI application factory, CORS, request ID middleware & global safe exception handling)
+  - [x] 60 new Phase 5 unit tests (143 total passing tests across the repo)
+- [x] **Phase 6: Upload Flow, Jobs & Data Lifecycle**
+  - [x] `src/api/upload_validation.py` (Pre-flight validation: magic bytes, encryption check, page counts, session quotas & chunk estimation)
+  - [x] `src/api/jobs.py` (Asynchronous background job runner with state machine: queued -> parsing -> chunking -> embedding -> indexing -> ready)
+  - [x] Ephemeral parser key lifecycle with guaranteed `finally` shredding and zero persistence in SQLite or disk
+  - [x] Quality Gate integration with non-blocking warnings and automatic local fallback on cloud parser failure
+  - [x] Session-scoped parse cache keyed by `(session_id, content_hash, parser, version)`
+  - [x] `src/api/lifecycle.py` (`DELETE /session` hard wipe of Qdrant vectors and SQLite records, single-doc deletion, and background TTL cleaner)
+  - [x] `src/api/upload.py` (FastAPI router for `/upload/validate`, `/upload`, `/jobs/{job_id}`, `/session/documents`, `DELETE /session`)
+  - [x] 23 new Phase 6 unit & integration tests (166 total passing tests across the repo)
 - [ ] *Up Next:* **Phase 7: Evaluation, Tuning & Tracing**
 - [ ] *Up Next:* **Phase 8: Frontend (Modern UI with Live Usage Meter)**
 - [ ] *Up Next:* **Phase 9: Hardening, Abuse & Failure Drills**

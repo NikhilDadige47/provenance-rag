@@ -34,7 +34,9 @@ class HybridChunker(IChunker):
             overlap_ratio=self.config.child_overlap,
         )
 
-    def chunk(self, structured_doc: StructuredDoc, config: ChunkingConfig | None = None) -> ChunkingResult:
+    def chunk(
+        self, structured_doc: StructuredDoc, config: ChunkingConfig | None = None
+    ) -> ChunkingResult:
         """Chunk a StructuredDoc into linked parents and children."""
         cfg = config or self.config
         doc_id = structured_doc.doc_id
@@ -169,7 +171,9 @@ class HybridChunker(IChunker):
 
         for block in blocks:
             b_tokens = estimate_tokens(block.text)
-            if current_blocks and (current_tokens + b_tokens > max_tokens or current_tokens >= target_tokens):
+            if current_blocks and (
+                current_tokens + b_tokens > max_tokens or current_tokens >= target_tokens
+            ):
                 sub_bcrumb = f"{breadcrumb} (Part {part_num})"
                 sub_sections.append((sub_bcrumb, current_blocks))
                 part_num += 1
@@ -245,7 +249,9 @@ class HybridChunker(IChunker):
                 table_pieces = split_markdown_table(block.text, max_tokens=cfg.table_max_tokens)
                 for table_piece in table_pieces:
                     content_hash = hashlib.sha256(table_piece.encode("utf-8")).hexdigest()[:16]
-                    chunk_id = self._generate_child_id(doc_id, parent_id, len(children), content_hash)
+                    chunk_id = self._generate_child_id(
+                        doc_id, parent_id, len(children), content_hash
+                    )
                     embedding_text = f"[{breadcrumb}]\n\n{table_piece}"
 
                     children.append(
@@ -270,7 +276,9 @@ class HybridChunker(IChunker):
                 chunk_id = self._generate_child_id(doc_id, parent_id, len(children), content_hash)
                 embedding_text = f"[{breadcrumb}]\n\n{block.text}"
 
-                chunk_type_val: Literal["code", "list"] = "code" if block.type == BlockType.CODE else "list"
+                chunk_type_val: Literal["code", "list"] = (
+                    "code" if block.type == BlockType.CODE else "list"
+                )
                 children.append(
                     ChildChunk(
                         chunk_id=chunk_id,

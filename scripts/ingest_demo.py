@@ -91,7 +91,9 @@ async def ingest_demo_document(
         try:
             dense_vectors = await embedder.embed(texts_to_embed, input_type="search_document")
         except Exception as exc:
-            logger.warning(f"Cohere embedding failed ({exc}). Using fallback vectors for local demo.")
+            logger.warning(
+                f"Cohere embedding failed ({exc}). Using fallback vectors for local demo."
+            )
             dense_vectors = [[0.01] * 1024 for _ in chunk_res.children]
     else:
         dense_vectors = [[0.01] * 1024 for _ in chunk_res.children]
@@ -123,7 +125,9 @@ async def main() -> None:
 
     pdf_files = list(DEMO_CORPUS_DIR.glob("*.pdf"))
     if not pdf_files:
-        logger.info(f"No PDF files found in {DEMO_CORPUS_DIR}. Place demo PDFs here for offline ingestion.")
+        logger.info(
+            f"No PDF files found in {DEMO_CORPUS_DIR}. Place demo PDFs here for offline ingestion."
+        )
         return
 
     total = 0
@@ -137,7 +141,9 @@ async def main() -> None:
             db=db,
         )
 
-    logger.info(f"Demo corpus ingestion completed: {total} total chunks indexed under scope='demo'.")
+    logger.info(
+        f"Demo corpus ingestion completed: {total} total chunks indexed under scope='demo'."
+    )
 
 
 if __name__ == "__main__":

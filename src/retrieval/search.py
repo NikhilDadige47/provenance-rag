@@ -132,7 +132,9 @@ class HybridSearchPipeline:
             # Ablation mode: use raw hybrid search order
             selected_candidates = raw_candidates[:top_n]
             retrieved_chunks = [
-                self._map_candidate_to_chunk(cand, score=float(cand.get("score", 0.0)), is_fallback=True)
+                self._map_candidate_to_chunk(
+                    cand, score=float(cand.get("score", 0.0)), is_fallback=True
+                )
                 for cand in selected_candidates
             ]
             is_fallback = True

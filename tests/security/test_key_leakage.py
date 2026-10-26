@@ -107,4 +107,6 @@ async def test_end_to_end_key_leakage() -> None:
     # COMBINED AUDIT: Verify that none of the raw secrets ever appear in any captured output!
     all_text = "\n".join(captured_outputs)
     for raw_secret in all_raw_secrets:
-        assert raw_secret not in all_text, f"CRITICAL SECURITY LEAK: Raw secret '{raw_secret}' was found in outputs!"
+        assert raw_secret not in all_text, (
+            f"CRITICAL SECURITY LEAK: Raw secret '{raw_secret}' was found in outputs!"
+        )

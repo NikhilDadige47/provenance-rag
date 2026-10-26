@@ -43,23 +43,28 @@ class QdrantVectorStore(IVectorStore):
         self,
         client: QdrantClient | None = None,
         collection_name: str = DEFAULT_COLLECTION_NAME,
+        cfg: OwnerConfig | None = None,
     ) -> None:
         self.collection_name = collection_name
 
         if client is not None:
             self._client = client
         else:
-            cfg = OwnerConfig.from_env()
-            if cfg.qdrant_url:
+            config = cfg or OwnerConfig.from_env()
+            if config.qdrant_url == ":memory:":
+                self._client = QdrantClient(":memory:")
+            elif config.qdrant_url:
                 try:
-                    api_key_str = cfg.qdrant_api_key.reveal() if cfg.qdrant_api_key else None
-                    remote_client = QdrantClient(url=cfg.qdrant_url, api_key=api_key_str, timeout=2.0)
+                    api_key_str = config.qdrant_api_key.reveal() if config.qdrant_api_key else None
+                    remote_client = QdrantClient(
+                        url=config.qdrant_url, api_key=api_key_str, timeout=2.0
+                    )
                     # Verify connectivity
                     remote_client.get_collections()
                     self._client = remote_client
                 except Exception as exc:
                     logger.warning(
-                        f"Could not connect to Qdrant at {cfg.qdrant_url} ({exc}). "
+                        f"Could not connect to Qdrant at {config.qdrant_url} ({exc}). "
                         "Falling back to local embedded Qdrant (./qdrant_storage)."
                     )
                     self._client = QdrantClient(path="./qdrant_storage")
@@ -83,9 +88,7 @@ class QdrantVectorStore(IVectorStore):
                         distance=Distance.COSINE,
                     )
                 },
-                sparse_vectors_config={
-                    SPARSE_VECTOR_NAME: SparseVectorParams()
-                },
+                sparse_vectors_config={SPARSE_VECTOR_NAME: SparseVectorParams()},
             )
 
             # Create payload indexes on 'scope' and 'doc_id' for fast isolated filtering
@@ -116,7 +119,9 @@ class QdrantVectorStore(IVectorStore):
             return 0
 
         if len(chunks) != len(dense_vectors) or len(chunks) != len(sparse_vectors):
-            raise ValueError("Chunks, dense vectors, and sparse vectors must have identical lengths")
+            raise ValueError(
+                "Chunks, dense vectors, and sparse vectors must have identical lengths"
+            )
 
         meta = doc_metadata or {}
         points: list[PointStruct] = []
@@ -168,11 +173,14 @@ class QdrantVectorStore(IVectorStore):
         self._client.upsert(collection_name=self.collection_name, points=points)
         return len(points)
 
+    # Alias for API consistency
+    upsert = upsert_chunks
+
     def hybrid_search(
         self,
         dense_query: list[float],
-        sparse_query: LocalSparseVector | None,
-        scope: str,
+        sparse_query: LocalSparseVector | None = None,
+        scope: str = "demo",
         limit: int = 30,
     ) -> list[dict[str, Any]]:
         """Perform hybrid search with mandatory server-enforced scope isolation.
@@ -191,9 +199,7 @@ class QdrantVectorStore(IVectorStore):
 
         # True hybrid RRF fusion if sparse query has active terms
         has_sparse = (
-            sparse_query is not None
-            and bool(sparse_query.indices)
-            and bool(sparse_query.values)
+            sparse_query is not None and bool(sparse_query.indices) and bool(sparse_query.values)
         )
 
         if has_sparse:

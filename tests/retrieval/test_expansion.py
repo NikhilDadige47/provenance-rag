@@ -55,12 +55,28 @@ def test_context_expander_deduplicates_same_parent():
 
     expander = ContextExpander(db=mock_db)
     chunk1 = RetrievedChunk(
-        chunk_id="c1", doc_id="d1", parent_id="p_shared", title="Doc",
-        breadcrumb="Overview", page=1, bbox=None, display_text="Piece 1", embedding_text="Piece 1", score=0.9
+        chunk_id="c1",
+        doc_id="d1",
+        parent_id="p_shared",
+        title="Doc",
+        breadcrumb="Overview",
+        page=1,
+        bbox=None,
+        display_text="Piece 1",
+        embedding_text="Piece 1",
+        score=0.9,
     )
     chunk2 = RetrievedChunk(
-        chunk_id="c2", doc_id="d1", parent_id="p_shared", title="Doc",
-        breadcrumb="Overview", page=1, bbox=None, display_text="Piece 2", embedding_text="Piece 2", score=0.8
+        chunk_id="c2",
+        doc_id="d1",
+        parent_id="p_shared",
+        title="Doc",
+        breadcrumb="Overview",
+        page=1,
+        bbox=None,
+        display_text="Piece 2",
+        embedding_text="Piece 2",
+        score=0.8,
     )
 
     res = expander.expand([chunk1, chunk2], scope="demo")

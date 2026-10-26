@@ -102,7 +102,11 @@ class LocalPyMuPDFParser(IParser):
                                     max_span_size = size
                                 # Check font flags: 2=italic, 4=serif, 16=bold (or font name contains bold)
                                 font_name = span.get("font", "").lower()
-                                if (span.get("flags", 0) & 16) or "bold" in font_name or "black" in font_name:
+                                if (
+                                    (span.get("flags", 0) & 16)
+                                    or "bold" in font_name
+                                    or "black" in font_name
+                                ):
                                     is_bold = True
                             block_text_parts.append(" ".join(line_text_parts))
 
@@ -114,7 +118,9 @@ class LocalPyMuPDFParser(IParser):
                         if max_span_size >= h1_size:
                             b_type = BlockType.HEADING
                             level = 1
-                        elif max_span_size >= h2_size or (is_bold and len(block_text) < 100 and "\n" not in block_text):
+                        elif max_span_size >= h2_size or (
+                            is_bold and len(block_text) < 100 and "\n" not in block_text
+                        ):
                             b_type = BlockType.HEADING
                             level = 2
                         elif block_text.startswith(("- ", "* ", "• ", "1. ", "2. ", "3. ")):
@@ -134,6 +140,10 @@ class LocalPyMuPDFParser(IParser):
                                 order=len(blocks),
                             )
                         )
+            try:
+                pdf_meta_title = (doc.metadata or {}).get("title", "").strip()
+            except Exception:
+                pdf_meta_title = ""
         finally:
             doc.close()
 
@@ -142,7 +152,7 @@ class LocalPyMuPDFParser(IParser):
 
         return StructuredDoc(
             doc_id=f"doc_{uuid.uuid4().hex[:12]}",
-            title=file_path.stem.replace("_", " ").title(),
+            title=pdf_meta_title or file_path.stem.replace("_", " ").title(),
             page_count=total_pages,
             parser_used=self.name,
             parser_version="pymupdf-2.0",

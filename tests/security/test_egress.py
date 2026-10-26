@@ -40,7 +40,9 @@ def test_blocked_private_and_loopback_ips() -> None:
     for url in dangerous_ips:
         with pytest.raises(EgressBlockedError) as exc_info:
             validate_egress_url(url, allow_local_qdrant=False)
-        assert "blocked" in str(exc_info.value).lower() or "prohibited" in str(exc_info.value).lower()
+        assert (
+            "blocked" in str(exc_info.value).lower() or "prohibited" in str(exc_info.value).lower()
+        )
 
 
 def test_insecure_http_scheme_rejected_for_cloud() -> None:

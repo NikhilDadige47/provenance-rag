@@ -7,9 +7,19 @@ from src.ingest.parsers.structured_doc import Block, BlockType, StructuredDoc
 def test_quality_gate_passes_clean_doc() -> None:
     blocks = [
         Block(type=BlockType.HEADING, text="Overview", level=1, page=1, order=0),
-        Block(type=BlockType.PARAGRAPH, text="This is a clean paragraph with good length.", page=1, order=1),
+        Block(
+            type=BlockType.PARAGRAPH,
+            text="This is a clean paragraph with good length.",
+            page=1,
+            order=1,
+        ),
         Block(type=BlockType.HEADING, text="Details", level=2, page=2, order=2),
-        Block(type=BlockType.PARAGRAPH, text="Another paragraph detailing the system.", page=2, order=3),
+        Block(
+            type=BlockType.PARAGRAPH,
+            text="Another paragraph detailing the system.",
+            page=2,
+            order=3,
+        ),
     ]
 
     doc = StructuredDoc(
@@ -20,9 +30,7 @@ def test_quality_gate_passes_clean_doc() -> None:
         blocks=blocks,
     )
 
-    ref_text = (
-        "Overview\nThis is a clean paragraph with good length.\nDetails\nAnother paragraph detailing the system."
-    )
+    ref_text = "Overview\nThis is a clean paragraph with good length.\nDetails\nAnother paragraph detailing the system."
 
     result = evaluate_parse_quality(doc, reference_text=ref_text)
     assert result.passed is True

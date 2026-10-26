@@ -4,7 +4,6 @@ Provides fast, cheap validation endpoints that verify API keys before
 documents are uploaded or chat queries are run, without burning credits or leaking keys.
 """
 
-
 import httpx
 from pydantic import BaseModel, Field
 
@@ -28,7 +27,9 @@ PROVIDER_PROBE_URLS = {
 
 
 class ConnectionTestRequest(BaseModel):
-    provider: str = Field(description="Name of the provider (e.g., llamaparse, groq, openai, cohere)")
+    provider: str = Field(
+        description="Name of the provider (e.g., llamaparse, groq, openai, cohere)"
+    )
     key: Secret = Field(description="API key to validate")
 
 

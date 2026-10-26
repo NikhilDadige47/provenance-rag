@@ -110,9 +110,11 @@ class CohereEmbedder(IEmbedder):
 
         return all_vectors
 
-    async def _embed_batch_with_retry(
-        self, batch: list[str], input_type: str
-    ) -> list[list[float]]:
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Alias for embed(texts, input_type='search_document')."""
+        return await self.embed(texts, input_type="search_document")
+
+    async def _embed_batch_with_retry(self, batch: list[str], input_type: str) -> list[list[float]]:
         """Execute a single batch embedding call with bounded exponential backoff."""
         headers = {
             "Authorization": f"Bearer {self._api_key.reveal()}",
@@ -167,7 +169,9 @@ class CohereEmbedder(IEmbedder):
                     # Rate limit - honor backoff if attempts remaining
                     if attempt == MAX_RETRIES:
                         raise RateLimitedError(provider="cohere", is_visitor_key=False)
-                    logger.warning(f"Cohere rate limit (429). Retrying in {backoff}s (attempt {attempt})...")
+                    logger.warning(
+                        f"Cohere rate limit (429). Retrying in {backoff}s (attempt {attempt})..."
+                    )
                     await asyncio.sleep(backoff)
                     backoff *= 2.0
                 else:
@@ -188,7 +192,9 @@ class CohereEmbedder(IEmbedder):
         self._failure_count += 1
         if self._failure_count >= CIRCUIT_BREAKER_THRESHOLD:
             self._circuit_open_until = time.time() + CIRCUIT_BREAKER_RESET_TIMEOUT
-            logger.error(f"Cohere circuit breaker TRIPPED! Open for {CIRCUIT_BREAKER_RESET_TIMEOUT}s.")
+            logger.error(
+                f"Cohere circuit breaker TRIPPED! Open for {CIRCUIT_BREAKER_RESET_TIMEOUT}s."
+            )
 
         logger.error(f"Failed to embed batch after {MAX_RETRIES} attempts: {last_exception}")
         raise ProviderUnavailableError(

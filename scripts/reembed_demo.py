@@ -56,7 +56,10 @@ async def reembed_all() -> None:
         cursor.execute("DELETE FROM documents WHERE session_id = 'demo'")
         # Expire active sessions to force refresh on embedding version shift
         now_iso = datetime.now(UTC).isoformat()
-        cursor.execute("UPDATE sessions SET expires_at = ? WHERE expires_at IS NULL OR expires_at > ?", (now_iso, now_iso))
+        cursor.execute(
+            "UPDATE sessions SET expires_at = ? WHERE expires_at IS NULL OR expires_at > ?",
+            (now_iso, now_iso),
+        )
         conn.commit()
 
     # 3. Re-ingest all documents in demo_corpus/
@@ -76,7 +79,9 @@ async def reembed_all() -> None:
             db=db,
         )
 
-    logger.info(f"Re-embedding complete! Total {total} chunks re-indexed under version '{cfg.embedding_version}'.")
+    logger.info(
+        f"Re-embedding complete! Total {total} chunks re-indexed under version '{cfg.embedding_version}'."
+    )
 
 
 if __name__ == "__main__":

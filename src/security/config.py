@@ -15,9 +15,9 @@ from src.security.secret import Secret
 class AccessTier(StrEnum):
     """The three access tiers supported by Provenance RAG."""
 
-    TIER_A_DEMO = "tier_a_demo"      # Zero keys, chat over pre-indexed demo corpus
+    TIER_A_DEMO = "tier_a_demo"  # Zero keys, chat over pre-indexed demo corpus
     TIER_B_UPLOAD = "tier_b_upload"  # Upload PDF with free local parser or visitor parser key
-    TIER_C_BYOK = "tier_c_byok"      # Visitor supplies both parser (or local) and own LLM key
+    TIER_C_BYOK = "tier_c_byok"  # Visitor supplies both parser (or local) and own LLM key
 
 
 class OwnerConfig(BaseSettings):
@@ -85,17 +85,27 @@ class VisitorKeys(BaseModel):
     These are kept in memory only and NEVER persisted.
     """
 
-    parser_provider: str | None = Field(default=None, description="e.g., llamaparse, landingai, local_pymupdf")
-    parser_key: Secret | None = Field(default=None, description="Visitor's parser API key if required")
+    parser_provider: str | None = Field(
+        default=None, description="e.g., llamaparse, landingai, local_pymupdf"
+    )
+    parser_key: Secret | None = Field(
+        default=None, description="Visitor's parser API key if required"
+    )
     llm_provider: str | None = Field(default=None, description="e.g., groq, openai, anthropic")
     llm_key: Secret | None = Field(default=None, description="Visitor's LLM API key")
-    llm_model: str | None = Field(default=None, description="Specific model requested on the visitor key")
+    llm_model: str | None = Field(
+        default=None, description="Specific model requested on the visitor key"
+    )
 
 
 def detect_access_tier(keys: VisitorKeys, upload_requested: bool = False) -> AccessTier:
     """Classify the user's interaction into Tier A, Tier B, or Tier C."""
     if keys.llm_key is not None and bool(keys.llm_key.reveal()):
         return AccessTier.TIER_C_BYOK
-    if upload_requested or keys.parser_provider or (keys.parser_key and bool(keys.parser_key.reveal())):
+    if (
+        upload_requested
+        or keys.parser_provider
+        or (keys.parser_key and bool(keys.parser_key.reveal()))
+    ):
         return AccessTier.TIER_B_UPLOAD
     return AccessTier.TIER_A_DEMO

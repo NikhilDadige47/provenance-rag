@@ -177,11 +177,17 @@ def main() -> None:
 
     ask_parser = subparsers.add_parser("ask", help="Ask a question against the corpus")
     ask_parser.add_argument("question", type=str, help="Question to ask")
-    ask_parser.add_argument("--scope", type=str, default="demo", help="Search scope (default: demo)")
-    ask_parser.add_argument("--provider", type=str, default=None, help="LLM Provider (groq, openai, anthropic)")
+    ask_parser.add_argument(
+        "--scope", type=str, default="demo", help="Search scope (default: demo)"
+    )
+    ask_parser.add_argument(
+        "--provider", type=str, default=None, help="LLM Provider (groq, openai, anthropic)"
+    )
     ask_parser.add_argument("--key", type=str, default=None, help="BYOK LLM API Key")
     ask_parser.add_argument("--model", type=str, default=None, help="Model name")
-    ask_parser.add_argument("--disable-rerank", action="store_true", help="Bypass Cohere reranking for ablation")
+    ask_parser.add_argument(
+        "--disable-rerank", action="store_true", help="Bypass Cohere reranking for ablation"
+    )
 
     args = parser.parse_args()
 
@@ -206,8 +212,10 @@ def main() -> None:
         print("=" * 60)
         if res["sources"]:
             for src in res["sources"]:
-                print(f" {src['citation']} {src['title']} (Page {src['page']}) > {src['breadcrumb']}")
-                print(f"     \"{src['snippet'][:120]}...\"\n")
+                print(
+                    f" {src['citation']} {src['title']} (Page {src['page']}) > {src['breadcrumb']}"
+                )
+                print(f'     "{src["snippet"][:120]}..."\n')
         else:
             print(" No source passages cited.")
 

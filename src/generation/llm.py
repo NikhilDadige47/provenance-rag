@@ -85,9 +85,7 @@ class GroqLLM(ILLM):
             if response.status_code == 429:
                 raise RateLimitedError(provider="groq", is_visitor_key=self._is_visitor_key)
             if response.status_code != 200:
-                raise ProviderUnavailableError(
-                    provider="groq", status_code=response.status_code
-                )
+                raise ProviderUnavailableError(provider="groq", status_code=response.status_code)
 
             async for line in response.aiter_lines():
                 line = line.strip()
@@ -162,9 +160,7 @@ class OpenAILLM(ILLM):
             if response.status_code == 429:
                 raise QuotaExhaustedError(provider="openai", is_visitor_key=self._is_visitor_key)
             if response.status_code != 200:
-                raise ProviderUnavailableError(
-                    provider="openai", status_code=response.status_code
-                )
+                raise ProviderUnavailableError(provider="openai", status_code=response.status_code)
 
             async for line in response.aiter_lines():
                 line = line.strip()

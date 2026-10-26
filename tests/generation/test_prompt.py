@@ -57,7 +57,13 @@ def test_build_generation_prompt_numbers_passages():
     sys_prompt, user_prompt = build_generation_prompt("What does Amendment 1 say?", passages)
 
     assert "UNTRUSTED REFERENCE CONTEXT" in user_prompt
-    assert "[1] Source: Constitution | Page: 1 | Section: Bill of Rights > First Amendment" in user_prompt
-    assert "[2] Source: Constitution | Page: 1 | Section: Bill of Rights > Second Amendment" in user_prompt
+    assert (
+        "[1] Source: Constitution | Page: 1 | Section: Bill of Rights > First Amendment"
+        in user_prompt
+    )
+    assert (
+        "[2] Source: Constitution | Page: 1 | Section: Bill of Rights > Second Amendment"
+        in user_prompt
+    )
     assert "Congress shall make no law" in user_prompt
     assert "What does Amendment 1 say?" in user_prompt

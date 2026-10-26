@@ -37,6 +37,7 @@ class LandingAINormalizer:
         if not chunks and "markdown" in payload:
             # Fallback if only raw markdown is returned
             from src.ingest.parsers.llamaparse import LlamaParseNormalizer
+
             return LlamaParseNormalizer.parse_markdown_to_blocks(payload["markdown"])
 
         blocks: list[Block] = []

@@ -60,15 +60,21 @@ def validate_egress_url(url: str, allow_local_qdrant: bool = True) -> str:
 
     # Require HTTPS for all external cloud egress
     if scheme != "https":
-        raise EgressBlockedError(f"Insecure scheme '{scheme}' for host '{host}'. Only HTTPS is permitted.")
+        raise EgressBlockedError(
+            f"Insecure scheme '{scheme}' for host '{host}'. Only HTTPS is permitted."
+        )
 
     # Check for IP literals (RFC 1918, link-local, cloud metadata)
     if is_ip_address(host):
         ip = ipaddress.ip_address(host)
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-            raise EgressBlockedError(f"Access to private/reserved IP '{host}' is strictly prohibited.")
+            raise EgressBlockedError(
+                f"Access to private/reserved IP '{host}' is strictly prohibited."
+            )
         # Any other direct IP is also blocked unless it matches a recognized provider
-        raise EgressBlockedError(f"Direct IP access '{host}' is blocked. Providers must be addressed via domain names.")
+        raise EgressBlockedError(
+            f"Direct IP access '{host}' is blocked. Providers must be addressed via domain names."
+        )
 
     # Enforce domain allowlist
     if host not in ALLOWED_EGRESS_HOSTS:

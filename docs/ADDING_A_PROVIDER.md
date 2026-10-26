@@ -17,6 +17,7 @@ from src.ingest.parsers.structured_doc import StructuredDoc, Block, BlockType
 from src.security.secret import Secret
 from src.security.egress import create_secure_client
 
+
 class MyParserAdapter(IParser):
     @property
     def name(self) -> str:
@@ -46,10 +47,12 @@ self.register(MyParserAdapter())
 ### Step 3: Authorize Upstream Host in Egress Allowlist
 In `src/security/egress.py`, add the provider's domain to `ALLOWED_EGRESS_HOSTS`:
 ```python
-ALLOWED_EGRESS_HOSTS = frozenset({
-    ...,
-    "api.myprovider.com",
-})
+ALLOWED_EGRESS_HOSTS = frozenset(
+    {
+        ...,
+        "api.myprovider.com",
+    }
+)
 ```
 
 ### Step 4: Add Probe Endpoint to `connections.py`

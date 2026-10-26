@@ -31,11 +31,7 @@ async def test_embedder_batch_embedding_success():
 
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "embeddings": {
-            "float": [mock_vector, mock_vector]
-        }
-    }
+    mock_response.json.return_value = {"embeddings": {"float": [mock_vector, mock_vector]}}
 
     with patch.object(embedder._http_client, "post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_response

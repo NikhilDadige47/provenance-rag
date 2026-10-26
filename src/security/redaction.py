@@ -19,13 +19,19 @@ _PATTERNS = [
     (re.compile(r"\b(llx-[a-zA-Z0-9_\-]{16,})\b"), "[REDACTED_LLAMAPARSE_KEY]"),
     # Headers in raw text/logs: "authorization: Bearer ...", "x-api-key: ...", etc.
     (
-        re.compile(r"((?:x-api-key|x-parser-key|x-llm-key|authorization):\s*(?:bearer\s+)?)[^\r\n,]+", re.IGNORECASE),
+        re.compile(
+            r"((?:x-api-key|x-parser-key|x-llm-key|authorization):\s*(?:bearer\s+)?)[^\r\n,]+",
+            re.IGNORECASE,
+        ),
         r"\1[REDACTED]",
     ),
     # Bearer tokens anywhere in text
     (re.compile(r"(Bearer\s+)[A-Za-z0-9_\-\.]{8,}", re.IGNORECASE), r"\1[REDACTED]"),
     # URL parameters like ?api_key=... or ?token=...
-    (re.compile(r"((?:api[_-]?key|token|secret|password)=)[^&\s]+", re.IGNORECASE), r"\1[REDACTED]"),
+    (
+        re.compile(r"((?:api[_-]?key|token|secret|password)=)[^&\s]+", re.IGNORECASE),
+        r"\1[REDACTED]",
+    ),
 ]
 
 _SENSITIVE_KEY_NAMES = {
@@ -65,8 +71,10 @@ def redact_dict(data: dict[str, Any]) -> dict[str, Any]:
             clean[k] = redact_dict(v)
         elif isinstance(v, list):
             clean[k] = [
-                redact_dict(item) if isinstance(item, dict)
-                else redact_text(str(item)) if isinstance(item, str)
+                redact_dict(item)
+                if isinstance(item, dict)
+                else redact_text(str(item))
+                if isinstance(item, str)
                 else item
                 for item in v
             ]
@@ -88,8 +96,10 @@ class RedactionFilter(logging.Filter):
                 record.args = redact_dict(record.args)
             elif isinstance(record.args, (tuple, list)):
                 record.args = tuple(
-                    redact_text(str(arg)) if isinstance(arg, str)
-                    else redact_dict(arg) if isinstance(arg, dict)
+                    redact_text(str(arg))
+                    if isinstance(arg, str)
+                    else redact_dict(arg)
+                    if isinstance(arg, dict)
                     else arg
                     for arg in record.args
                 )

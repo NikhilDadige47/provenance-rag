@@ -32,7 +32,9 @@ LLAMAPARSE_JOB_URL = "https://api.cloud.llamaindex.ai/api/v1/parsing/job"
 class LlamaParseNormalizer:
     """Normalizes raw Markdown output from LlamaParse into StructuredDoc blocks."""
 
-    PAGE_MARKER_RE = re.compile(r"(?:---\s*\[Page\s*(\d+)\]\s*---|<!--\s*page\s*(\d+)\s*-->|\f)", re.IGNORECASE)
+    PAGE_MARKER_RE = re.compile(
+        r"(?:---\s*\[Page\s*(\d+)\]\s*---|<!--\s*page\s*(\d+)\s*-->|\f)", re.IGNORECASE
+    )
     HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
     TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
@@ -133,9 +135,15 @@ class LlamaParseNormalizer:
                 idx += 1
                 while idx < total_lines:
                     next_stripped = lines[idx].strip()
-                    if next_stripped.startswith(("- ", "* ", "+ ", "• ")) or re.match(r"^\d+\.\s+", next_stripped):
+                    if next_stripped.startswith(("- ", "* ", "+ ", "• ")) or re.match(
+                        r"^\d+\.\s+", next_stripped
+                    ):
                         break
-                    if not next_stripped or cls.HEADING_RE.match(next_stripped) or cls.TABLE_ROW_RE.match(next_stripped):
+                    if (
+                        not next_stripped
+                        or cls.HEADING_RE.match(next_stripped)
+                        or cls.TABLE_ROW_RE.match(next_stripped)
+                    ):
                         break
                     list_lines.append(next_stripped)
                     idx += 1

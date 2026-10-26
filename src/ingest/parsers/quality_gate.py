@@ -24,7 +24,9 @@ class QualityGateResult(BaseModel):
     advice: str | None = None
 
 
-def check_text_coverage(doc: StructuredDoc, reference_text: str | None) -> tuple[bool, str | None, float]:
+def check_text_coverage(
+    doc: StructuredDoc, reference_text: str | None
+) -> tuple[bool, str | None, float]:
     """Check if the parsed doc captured sufficient text compared to reference."""
     if not reference_text or not reference_text.strip():
         return True, None, 1.0
@@ -38,9 +40,17 @@ def check_text_coverage(doc: StructuredDoc, reference_text: str | None) -> tuple
     ratio = round(doc_len / ref_len, 3)
 
     if ratio < 0.65:
-        return False, f"Low text coverage: parsed content covers only {ratio*100:.1f}% of reference text.", ratio
+        return (
+            False,
+            f"Low text coverage: parsed content covers only {ratio * 100:.1f}% of reference text.",
+            ratio,
+        )
     if ratio > 2.5:
-        return False, f"Plausible duplicate text: parsed text is {ratio:.1f}x larger than reference.", ratio
+        return (
+            False,
+            f"Plausible duplicate text: parsed text is {ratio:.1f}x larger than reference.",
+            ratio,
+        )
 
     return True, None, ratio
 
@@ -97,7 +107,9 @@ def check_garbled_text(doc: StructuredDoc) -> tuple[bool, str | None, float]:
     for b in doc.blocks:
         total_chars += len(b.text)
         for ch in b.text:
-            if ch == "\ufffd" or unicodedata.category(ch) == "Co":  # Private use or replacement char
+            if (
+                ch == "\ufffd" or unicodedata.category(ch) == "Co"
+            ):  # Private use or replacement char
                 bad_chars += 1
 
     if total_chars == 0:
@@ -105,7 +117,11 @@ def check_garbled_text(doc: StructuredDoc) -> tuple[bool, str | None, float]:
 
     bad_ratio = bad_chars / total_chars
     if bad_ratio > 0.03:
-        return False, f"High garbled text ratio: {bad_ratio*100:.2f}% unprintable characters.", bad_ratio
+        return (
+            False,
+            f"High garbled text ratio: {bad_ratio * 100:.2f}% unprintable characters.",
+            bad_ratio,
+        )
 
     return True, None, bad_ratio
 
@@ -160,3 +176,7 @@ def evaluate_parse_quality(
         metrics=metrics,
         advice=advice,
     )
+
+
+# Alias for roadmap naming consistency
+evaluate_quality_gate = evaluate_parse_quality

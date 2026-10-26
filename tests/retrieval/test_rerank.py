@@ -63,9 +63,7 @@ async def test_rerank_usage_callback():
 
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "results": [{"index": 0, "relevance_score": 0.9}]
-    }
+    mock_response.json.return_value = {"results": [{"index": 0, "relevance_score": 0.9}]}
 
     with patch.object(reranker._http_client, "post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_response

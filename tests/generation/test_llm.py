@@ -17,7 +17,7 @@ async def test_groq_llm_streaming_success():
     sse_lines = [
         'data: {"choices": [{"delta": {"content": "Hello"}}]}',
         'data: {"choices": [{"delta": {"content": " world"}}]}',
-        'data: [DONE]',
+        "data: [DONE]",
     ]
 
     mock_resp = AsyncMock()

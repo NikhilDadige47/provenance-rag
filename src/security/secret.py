@@ -26,7 +26,9 @@ class Secret:
         elif isinstance(value, str):
             self._value = value
         else:
-            raise TypeError(f"Secret must be initialized with str or Secret, got {type(value).__name__}")
+            raise TypeError(
+                f"Secret must be initialized with str or Secret, got {type(value).__name__}"
+            )
 
     def reveal(self) -> str:
         """Explicitly access the underlying secret string."""
@@ -55,13 +57,12 @@ class Secret:
         return hash(self._value)
 
     @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: Any
-    ) -> CoreSchema:
+    def __get_pydantic_core_schema__(cls, source_type: Any, handler: Any) -> CoreSchema:
         """Pydantic v2 schema integration.
 
         Validates strings into Secret instances, and serializes them as '***'.
         """
+
         def validate_from_str(value: Any) -> Secret:
             if isinstance(value, Secret):
                 return value

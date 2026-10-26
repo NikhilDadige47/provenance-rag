@@ -15,12 +15,26 @@ def test_audit_citations_detects_hallucinations():
     """Verify cited numbers outside the available passages are flagged as invalid."""
     passages = [
         ExpandedContextPassage(
-            passage_id="p1", doc_id="d1", title="Report", breadcrumb="Finance",
-            page=1, text="Revenue was $10M.", token_count=10, is_parent_expanded=True, source_chunk_ids=["c1"]
+            passage_id="p1",
+            doc_id="d1",
+            title="Report",
+            breadcrumb="Finance",
+            page=1,
+            text="Revenue was $10M.",
+            token_count=10,
+            is_parent_expanded=True,
+            source_chunk_ids=["c1"],
         ),
         ExpandedContextPassage(
-            passage_id="p2", doc_id="d1", title="Report", breadcrumb="Costs",
-            page=2, text="Costs were $6M.", token_count=10, is_parent_expanded=True, source_chunk_ids=["c2"]
+            passage_id="p2",
+            doc_id="d1",
+            title="Report",
+            breadcrumb="Costs",
+            page=2,
+            text="Costs were $6M.",
+            token_count=10,
+            is_parent_expanded=True,
+            source_chunk_ids=["c2"],
         ),
     ]
 
@@ -41,8 +55,15 @@ def test_audit_citations_valid_grounded():
     """Verify completely grounded citations pass audit."""
     passages = [
         ExpandedContextPassage(
-            passage_id="p1", doc_id="d1", title="Report", breadcrumb="Finance",
-            page=1, text="Revenue was $10M.", token_count=10, is_parent_expanded=True, source_chunk_ids=["c1"]
+            passage_id="p1",
+            doc_id="d1",
+            title="Report",
+            breadcrumb="Finance",
+            page=1,
+            text="Revenue was $10M.",
+            token_count=10,
+            is_parent_expanded=True,
+            source_chunk_ids=["c1"],
         ),
     ]
 

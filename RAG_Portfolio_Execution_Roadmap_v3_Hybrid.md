@@ -69,42 +69,42 @@
 
 ## Checklist
 
-☐ **P0-T1 🔴 Lock scope and decisions** (P0)
-  ☐ [30m] Confirm the three tiers and who pays for what (table above)
-  ☐ [30m] Confirm **BYOK = parser + LLM only**; Cohere Embed + Rerank on the owner key; owner-run Qdrant; **no visitor-supplied URLs**
-  ☐ [30m] Choose key transport: parser key per upload request (job-scoped), LLM key per chat request header (request-scoped); both memory-only
-  ☐ [30m] Pick v1 providers: **2 cloud parsers + local**, **owner default LLM + 2 BYOK LLM providers**
-  ☐ [30m] Choose hosting (API, UI) and SQL (SQLite vs Postgres)
-  ☐ [30m] Write initial cap values (placeholders) and record everything in `docs/DECISIONS.md`
+☑ **P0-T1 🔴 Lock scope and decisions** (P0)
+  ☑ [30m] Confirm the three tiers and who pays for what (table above)
+  ☑ [30m] Confirm **BYOK = parser + LLM only**; Cohere Embed + Rerank on the owner key; owner-run Qdrant; **no visitor-supplied URLs**
+  ☑ [30m] Choose key transport: parser key per upload request (job-scoped), LLM key per chat request header (request-scoped); both memory-only
+  ☑ [30m] Pick v1 providers: **2 cloud parsers + local**, **owner default LLM + 2 BYOK LLM providers**
+  ☑ [30m] Choose hosting (API, UI) and SQL (SQLite vs Postgres)
+  ☑ [30m] Write initial cap values (placeholders) and record everything in `docs/DECISIONS.md`
 
-☐ **P0-T2 Create repo and skeleton** (P0) · *Depends on: P0-T1*
-  ☐ [30m] Repo, `.gitignore` (`.env`, uploads, caches), LICENSE, README stub
-  ☐ [45m] Folders from the architecture §11
-  ☐ [45m] `src/interfaces.py` with `IParser`, `IChunker`, `IEmbedder`, `IVectorStore`, `IReranker`, `ILLM` as abstract classes
-  ☐ [30m] Tooling: `pyproject.toml`, ruff, black, mypy (loose), pytest with a placeholder test
+☑ **P0-T2 Create repo and skeleton** (P0) · *Depends on: P0-T1*
+  ☑ [30m] Repo, `.gitignore` (`.env`, uploads, caches), LICENSE, README stub
+  ☑ [45m] Folders from the architecture §11
+  ☑ [45m] `src/interfaces.py` with `IParser`, `IChunker`, `IEmbedder`, `IVectorStore`, `IReranker`, `ILLM` as abstract classes
+  ☑ [30m] Tooling: `pyproject.toml`, ruff, black, mypy (loose), pytest with a placeholder test
 
-☐ **P0-T3 CI and secrets hygiene** (P0) · *Depends on: P0-T2*
-  ☐ [45m] GitHub Actions: lint + tests on every push
-  ☐ [30m] Secret-scanning pre-commit hook (gitleaks)
-  ☐ [20m] `.env.example` with owner keys and cap settings only
-  ☐ [20m] Verify `.env` is ignored
+☑ **P0-T3 CI and secrets hygiene** (P0) · *Depends on: P0-T2*
+  ☑ [45m] GitHub Actions: lint + tests on every push
+  ☑ [30m] Secret-scanning pre-commit hook (gitleaks)
+  ☑ [20m] `.env.example` with owner keys and cap settings only
+  ☑ [20m] Verify `.env` is ignored
 
-☐ **P0-T4 🔴 Owner accounts and hard budgets** (P0) · *Depends on: P0-T1*
-  ☐ [45m] Create **Cohere** account; read current terms and limits; **confirm a trial key is allowed for a public demo, otherwise plan for a production key**
-  ☐ [30m] Create default-LLM account and key
-  ☐ [30m] **Set monthly spend limits and alerts on Cohere and the LLM before any code uses the keys**
-  ☐ [30m] Create Qdrant Cloud free cluster; (optional) Langfuse project
-  ☐ [45m] Create your own dev keys for the parsers and BYOK LLM providers you will support
-  ☐ [30m] Read each provider's docs: auth, test call, rate limits, model names, embedding dimension, input types
+☑ **P0-T4 🔴 Owner accounts and hard budgets** (P0) · *Depends on: P0-T1*
+  ☑ [45m] Create **Cohere** account; read current terms and limits; **confirm a trial key is allowed for a public demo, otherwise plan for a production key**
+  ☑ [30m] Create default-LLM account and key
+  ☑ [30m] **Set monthly spend limits and alerts on Cohere and the LLM before any code uses the keys**
+  ☑ [30m] Create Qdrant Cloud free cluster; (optional) Langfuse project
+  ☑ [45m] Create your own dev keys for the parsers and BYOK LLM providers you will support
+  ☑ [30m] Read each provider's docs: auth, test call, rate limits, model names, embedding dimension, input types
 
-☐ **P0-T5 Sample data and demo corpus** (P1) · *Depends on: P0-T1*
-  ☐ [45m] Collect 5-10 varied PDFs (clean, tables, no headings, multi-column, scan-like)
-  ☐ [45m] Choose 3-5 public documents for the **demo corpus**; confirm redistribution rights
-  ☐ [30m] Store in `demo_corpus/` and `samples/` with source/licence notes
+☑ **P0-T5 Sample data and demo corpus** (P1) · *Depends on: P0-T1*
+  ☑ [45m] Collect 5-10 varied PDFs (clean, tables, no headings, multi-column, scan-like)
+  ☑ [45m] Choose 3-5 public documents for the **demo corpus**; confirm redistribution rights
+  ☑ [30m] Store in `demo_corpus/` and `samples/` with source/licence notes
 
-☐ **P0-T6 Project board** (P1)
-  ☐ [45m] Import this roadmap; one epic per phase
-  ☐ [15m] Labels: P0/P1/P2, Critical, Blocked
+☑ **P0-T6 Project board** (P1)
+  ☑ [45m] Import this roadmap; one epic per phase
+  ☑ [15m] Labels: P0/P1/P2, Critical, Blocked
 
 Priority: **P0** · Complexity: **Low**
 
@@ -126,50 +126,50 @@ Priority: **P0** · Complexity: **Low**
 
 ## Checklist
 
-☐ **P1-T1 🔴 Secret type and redaction** (P0) · *Depends on: P0-T2*
-  ☐ [45m] `Secret` wrapper whose `str`/`repr`/JSON output is `***`; real value only via explicit `.reveal()`
-  ☐ [45m] Logging filter/middleware stripping `Authorization`, key headers and any `*key*`/`*token*`/`*secret*` fields
-  ☐ [30m] Exception handler redaction; visitor-facing errors never echo keys
-  ☐ [45m] Tests: fake keys never appear in logs, exceptions or responses
+☑ **P1-T1 🔴 Secret type and redaction** (P0) · *Depends on: P0-T2*
+  ☑ [45m] `Secret` wrapper whose `str`/`repr`/JSON output is `***`; real value only via explicit `.reveal()`
+  ☑ [45m] Logging filter/middleware stripping `Authorization`, key headers and any `*key*`/`*token*`/`*secret*` fields
+  ☑ [30m] Exception handler redaction; visitor-facing errors never echo keys
+  ☑ [45m] Tests: fake keys never appear in logs, exceptions or responses
 
-☐ **P1-T2 Config model: owner keys vs visitor keys** (P0) · *Depends on: P1-T1*
-  ☐ [45m] `OwnerConfig` (Cohere, default LLM, Qdrant, Langfuse, cap values) loaded from env only
-  ☐ [30m] `VisitorKeys {parser?, llm?}` request-scoped model; tier detection from which keys are present
-  ☐ [30m] Provider catalog (small JSON/YAML): parsers and BYOK LLMs with docs links and notes
-  ☐ [30m] Unit tests for validation (unknown provider, missing key where required)
+☑ **P1-T2 Config model: owner keys vs visitor keys** (P0) · *Depends on: P1-T1*
+  ☑ [45m] `OwnerConfig` (Cohere, default LLM, Qdrant, Langfuse, cap values) loaded from env only
+  ☑ [30m] `VisitorKeys {parser?, llm?}` request-scoped model; tier detection from which keys are present
+  ☑ [30m] Provider catalog (small JSON/YAML): parsers and BYOK LLMs with docs links and notes
+  ☑ [30m] Unit tests for validation (unknown provider, missing key where required)
 
-☐ **P1-T3 Interfaces and registries** (P0) · *Depends on: P1-T2*
-  ☐ [45m] `IParser.parse(file, api_key|None)` and `ILLM.generate(prompt, api_key|None)`; owner-key adapters (`IEmbedder`, `IReranker`) read from `OwnerConfig`
-  ☐ [30m] Registries: parsers, LLMs
-  ☐ [30m] `docs/ADDING_A_PROVIDER.md` (one adapter + one catalog entry)
+☑ **P1-T3 Interfaces and registries** (P0) · *Depends on: P1-T2*
+  ☑ [45m] `IParser.parse(file, api_key|None)` and `ILLM.generate(prompt, api_key|None)`; owner-key adapters (`IEmbedder`, `IReranker`) read from `OwnerConfig`
+  ☑ [30m] Registries: parsers, LLMs
+  ☑ [30m] `docs/ADDING_A_PROVIDER.md` (one adapter + one catalog entry)
 
-☐ **P1-T4 🔴 Key transport and lifecycle** (P0) · *Depends on: P1-T1, P1-T2*
-  ☐ [45m] Parser key from upload request header/body, never query string
-  ☐ [45m] LLM key from a chat request header into a request-scoped context destroyed at request end
-  ☐ [45m] Background jobs receive the parser key in process memory only and discard it in `finally`
-  ☐ [30m] Reject non-TLS in production; HSTS
-  ☐ [30m] Tests: no key persisted in SQL, files, cache or queue payloads
+☑ **P1-T4 🔴 Key transport and lifecycle** (P0) · *Depends on: P1-T1, P1-T2*
+  ☑ [45m] Parser key from upload request header/body, never query string
+  ☑ [45m] LLM key from a chat request header into a request-scoped context destroyed at request end
+  ☑ [45m] Background jobs receive the parser key in process memory only and discard it in `finally`
+  ☑ [30m] Reject non-TLS in production; HSTS
+  ☑ [30m] Tests: no key persisted in SQL, files, cache or queue payloads
 
-☐ **P1-T5 🔴 Fixed egress allowlist** (P0) · *Depends on: P1-T3*
-  ☐ [45m] HTTP client wrapper that only permits hard-coded provider hosts per adapter
-  ☐ [30m] Set connect/read timeouts and response-size caps; disable redirects to other hosts
-  ☐ [30m] Tests: adapter refuses any other host (including `localhost` and private IPs)
-  ☐ [15m] Note in `DECISIONS.md`: custom endpoints are out of scope; add an SSRF guard first if ever introduced
+☑ **P1-T5 🔴 Fixed egress allowlist** (P0) · *Depends on: P1-T3*
+  ☑ [45m] HTTP client wrapper that only permits hard-coded provider hosts per adapter
+  ☑ [30m] Set connect/read timeouts and response-size caps; disable redirects to other hosts
+  ☑ [30m] Tests: adapter refuses any other host (including `localhost` and private IPs)
+  ☑ [15m] Note in `DECISIONS.md`: custom endpoints are out of scope; add an SSRF guard first if ever introduced
 
-☐ **P1-T6 Error taxonomy and retry policy** (P0) · *Depends on: P1-T3*
-  ☐ [30m] Errors: `InvalidKey`, `QuotaExhausted`, `RateLimited`, `Timeout`, `ModelNotFound`, `ProviderError`
-  ☐ [45m] Friendly message mapping with no raw provider payloads
-  ☐ [45m] **Visitor-key errors: never retry.** Owner-key rate limits: bounded exponential backoff, honor `Retry-After`, circuit breaker after repeated failures
-  ☐ [30m] Tests with simulated errors
+☑ **P1-T6 Error taxonomy and retry policy** (P0) · *Depends on: P1-T3*
+  ☑ [30m] Errors: `InvalidKey`, `QuotaExhausted`, `RateLimited`, `Timeout`, `ModelNotFound`, `ProviderError`
+  ☑ [45m] Friendly message mapping with no raw provider payloads
+  ☑ [45m] **Visitor-key errors: never retry.** Owner-key rate limits: bounded exponential backoff, honor `Retry-After`, circuit breaker after repeated failures
+  ☑ [30m] Tests with simulated errors
 
-☐ **P1-T7 Test-connection for visitor keys** (P0) · *Depends on: P1-T3, P1-T6*
-  ☐ [45m] Parser key check (documented validation endpoint or smallest possible call; avoid burning pages)
-  ☐ [45m] LLM key check (tiny completion, confirm model exists)
-  ☐ [30m] `POST /connections/test` returns `ok | error_code | hint`; never stores or echoes the key
+☑ **P1-T7 Test-connection for visitor keys** (P0) · *Depends on: P1-T3, P1-T6*
+  ☑ [45m] Parser key check (documented validation endpoint or smallest possible call; avoid burning pages)
+  ☑ [45m] LLM key check (tiny completion, confirm model exists)
+  ☑ [30m] `POST /connections/test` returns `ok | error_code | hint`; never stores or echoes the key
 
-☐ **P1-T8 Security suite in CI** (P0) · *Depends on: P1-T4, P1-T5, P1-T7*
-  ☐ [45m] Grep-based test: fake parser key and fake LLM key never appear in captured logs/responses
-  ☐ [30m] Wire redaction and allowlist tests as required CI checks
+☑ **P1-T8 Security suite in CI** (P0) · *Depends on: P1-T4, P1-T5, P1-T7*
+  ☑ [45m] Grep-based test: fake parser key and fake LLM key never appear in captured logs/responses
+  ☑ [30m] Wire redaction and allowlist tests as required CI checks
 
 Priority: **P0** · Complexity: **High**
 
@@ -190,50 +190,50 @@ Priority: **P0** · Complexity: **High**
 
 ## Checklist
 
-☐ **P2-T1 🔴 Define `StructuredDoc` contract** (P0) · *Depends on: P1-T3*
-  ☐ [45m] `Block` (type, text, level, page, bbox, order) and `StructuredDoc` (doc_id, title, page_count, parser_used, parser_version, blocks)
-  ☐ [30m] Validation (unique reading order, heading level 1-6, no empty blocks)
-  ☐ [30m] Unit tests
+☑ **P2-T1 🔴 Define `StructuredDoc` contract** (P0) · *Depends on: P1-T3*
+  ☑ [45m] `Block` (type, text, level, page, bbox, order) and `StructuredDoc` (doc_id, title, page_count, parser_used, parser_version, blocks)
+  ☑ [30m] Validation (unique reading order, heading level 1-6, no empty blocks)
+  ☑ [30m] Unit tests
 
-☐ **P2-T2 Local PyMuPDF parser (no key)** (P0) · *Depends on: P2-T1*
-  ☐ [60m] Per-page text with font size/bold metadata
-  ☐ [45m] Heading heuristics (font-size ranking → levels 1-3)
-  ☐ [30m] Header/footer removal; map to `StructuredDoc`
-  ☐ [30m] Tests on 3 sample PDFs
+☑ **P2-T2 Local PyMuPDF parser (no key)** (P0) · *Depends on: P2-T1*
+  ☑ [60m] Per-page text with font size/bold metadata
+  ☑ [45m] Heading heuristics (font-size ranking → levels 1-3)
+  ☑ [30m] Header/footer removal; map to `StructuredDoc`
+  ☑ [30m] Tests on 3 sample PDFs
 
-☐ **P2-T3 Adapter + normalizer #1 (e.g. LlamaParse)** (P0) · *Depends on: P2-T1, P1-T5, P1-T6*
-  ☐ [45m] Read current provider docs (output format, limits)
-  ☐ [60m] Adapter using the visitor's key through the egress wrapper; timeout; no retry on key/quota errors
-  ☐ [30m] Run once with your dev key; **save raw outputs as fixtures**
-  ☐ [60m] Normalizer: `#` → heading(level), pipe tables → table, lists → list_item, page markers → page
-  ☐ [45m] Normalizer tests from fixtures (no API calls)
+☑ **P2-T3 Adapter + normalizer #1 (e.g. LlamaParse)** (P0) · *Depends on: P2-T1, P1-T5, P1-T6*
+  ☑ [45m] Read current provider docs (output format, limits)
+  ☑ [60m] Adapter using the visitor's key through the egress wrapper; timeout; no retry on key/quota errors
+  ☑ [30m] Run once with your dev key; **save raw outputs as fixtures**
+  ☑ [60m] Normalizer: `#` → heading(level), pipe tables → table, lists → list_item, page markers → page
+  ☑ [45m] Normalizer tests from fixtures (no API calls)
 
-☐ **P2-T4 Adapter + normalizer #2 (e.g. Unstructured or Landing AI)** (P0) · *Depends on: P2-T1, P1-T5, P1-T6*
-  ☐ [45m] Read provider docs
-  ☐ [60m] Adapter (same error handling and egress rules)
-  ☐ [30m] Save raw fixtures
-  ☐ [60m] Normalizer (Title → heading with inferred level default 2, drop Header/Footer/PageNumber, tables → Markdown; or regions with page/bbox)
-  ☐ [45m] Normalizer tests from fixtures
+☑ **P2-T4 Adapter + normalizer #2 (e.g. Unstructured or Landing AI)** (P0) · *Depends on: P2-T1, P1-T5, P1-T6*
+  ☑ [45m] Read provider docs
+  ☑ [60m] Adapter (same error handling and egress rules)
+  ☑ [30m] Save raw fixtures
+  ☑ [60m] Normalizer (Title → heading with inferred level default 2, drop Header/Footer/PageNumber, tables → Markdown; or regions with page/bbox)
+  ☑ [45m] Normalizer tests from fixtures
 
-☐ **P2-T5 Optional third parser** (P2) · *Depends on: P2-T3, P2-T4*
-  ☐ [120m] Adapter + normalizer + tests
-  ☐ [15m] Decision gate: skip if behind schedule; mark "planned" in README
+☑ **P2-T5 Optional third parser** (P2) · *Depends on: P2-T3, P2-T4*
+  ☑ [120m] Adapter + normalizer + tests
+  ☑ [15m] Decision gate: skip if behind schedule; mark "planned" in README
 
-☐ **P2-T6 Common clean-up** (P1) · *Depends on: P2-T3*
-  ☐ [45m] Remove repeated headers/footers
-  ☐ [30m] Fix hyphenation, normalize whitespace/unicode, drop empty blocks; tests
+☑ **P2-T6 Common clean-up** (P1) · *Depends on: P2-T3*
+  ☑ [45m] Remove repeated headers/footers
+  ☑ [30m] Fix hyphenation, normalize whitespace/unicode, drop empty blocks; tests
 
-☐ **P2-T7 🔴 Quality gate** (P0) · *Depends on: P2-T2, P2-T3*
-  ☐ [45m] Text coverage vs local reference extraction
-  ☐ [30m] Heading sanity (none in long doc, erratic level jumps)
-  ☐ [45m] Table integrity checks
-  ☐ [30m] Empty-page and garbled-text checks
-  ☐ [45m] Tune thresholds on your sample PDFs; record in `DECISIONS.md`
-  ☐ [45m] Tests: flags a broken parse, passes a good one
+☑ **P2-T7 🔴 Quality gate** (P0) · *Depends on: P2-T2, P2-T3*
+  ☑ [45m] Text coverage vs local reference extraction
+  ☑ [30m] Heading sanity (none in long doc, erratic level jumps)
+  ☑ [45m] Table integrity checks
+  ☑ [30m] Empty-page and garbled-text checks
+  ☑ [45m] Tune thresholds on your sample PDFs; record in `DECISIONS.md`
+  ☑ [45m] Tests: flags a broken parse, passes a good one
 
-☐ **P2-T8 Page counting and local fallback** (P1) · *Depends on: P2-T2*
-  ☐ [30m] Local page counter (no API call)
-  ☐ [45m] Optional "re-parse locally once if coverage very low" path
+☑ **P2-T8 Page counting and local fallback** (P1) · *Depends on: P2-T2*
+  ☑ [30m] Local page counter (no API call)
+  ☑ [45m] Optional "re-parse locally once if coverage very low" path
 
 Priority: **P0** · Complexity: **High**
 
@@ -254,58 +254,58 @@ Priority: **P0** · Complexity: **High**
 
 ## Checklist
 
-☐ **P3-T1 🔴 Chunker: structure pass** (P0) · *Depends on: P2-T1*
-  ☐ [45m] Heading stack with breadcrumb tagging (skipped levels, empty headings, repeats)
-  ☐ [30m] Config object with sizes from the architecture §4.4.1
-  ☐ [45m] Tokenizer: Cohere model tokenizer or approximation with a safety margin; verify chunks never exceed the model's max input
-  ☐ [30m] Tests for nested/skipped headings
+☑ **P3-T1 🔴 Chunker: structure pass** (P0) · *Depends on: P2-T1*
+  ☑ [45m] Heading stack with breadcrumb tagging (skipped levels, empty headings, repeats)
+  ☑ [30m] Config object with sizes from the architecture §4.4.1
+  ☑ [45m] Tokenizer: Cohere model tokenizer or approximation with a safety margin; verify chunks never exceed the model's max input
+  ☑ [30m] Tests for nested/skipped headings
 
-☐ **P3-T2 Parent construction** (P0) · *Depends on: P3-T1*
-  ☐ [45m] Sections by lowest heading
-  ☐ [60m] Oversized sections → recursive split into sub-parents; never split tables/lists/code
-  ☐ [45m] No-heading documents → fixed-size parents
-  ☐ [30m] Tests for each case
+☑ **P3-T2 Parent construction** (P0) · *Depends on: P3-T1*
+  ☑ [45m] Sections by lowest heading
+  ☑ [60m] Oversized sections → recursive split into sub-parents; never split tables/lists/code
+  ☑ [45m] No-heading documents → fixed-size parents
+  ☑ [30m] Tests for each case
 
-☐ **P3-T3 Child construction + recursive splitter** (P0) · *Depends on: P3-T2*
-  ☐ [60m] Token-based recursive splitter with overlap
-  ☐ [45m] Merge small paragraphs; merge under-min pieces
-  ☐ [60m] Tables: whole if small, else split by rows with header repeated
-  ☐ [30m] `chunk_index`, `prev/next_chunk_id`; **deterministic chunk IDs** (hash of doc + position)
-  ☐ [45m] Tests: size caps, no mid-row table splits
+☑ **P3-T3 Child construction + recursive splitter** (P0) · *Depends on: P3-T2*
+  ☑ [60m] Token-based recursive splitter with overlap
+  ☑ [45m] Merge small paragraphs; merge under-min pieces
+  ☑ [60m] Tables: whole if small, else split by rows with header repeated
+  ☑ [30m] `chunk_index`, `prev/next_chunk_id`; **deterministic chunk IDs** (hash of doc + position)
+  ☑ [45m] Tests: size caps, no mid-row table splits
 
-☐ **P3-T4 Heading fusion and validation** (P0) · *Depends on: P3-T3*
-  ☐ [30m] `embedding_text` = breadcrumb + child; `display_text` clean
-  ☐ [45m] Validation: every child has a parent, no empties/duplicates, text coverage
-  ☐ [30m] Manual inspection script on 3 PDFs
+☑ **P3-T4 Heading fusion and validation** (P0) · *Depends on: P3-T3*
+  ☑ [30m] `embedding_text` = breadcrumb + child; `display_text` clean
+  ☑ [45m] Validation: every child has a parent, no empties/duplicates, text coverage
+  ☑ [30m] Manual inspection script on 3 PDFs
 
-☐ **P3-T5 🔴 Cohere Embed adapter** (P0) · *Depends on: P3-T4, P1-T5, P1-T6, P0-T4*
-  ☐ [60m] Adapter with **document vs query input types**, provider batch limits, truncation setting; owner key from config
-  ☐ [45m] Bounded backoff for rate limits, circuit breaker on repeated failure
-  ☐ [30m] Record model name and vector dimension; fail fast if unexpected
-  ☐ [45m] Local sparse vectors (FastEmbed/BM25), no API
-  ☐ [30m] Usage counter hooks (chunks embedded) for caps in Phase 5
+☑ **P3-T5 🔴 Cohere Embed adapter** (P0) · *Depends on: P3-T4, P1-T5, P1-T6, P0-T4*
+  ☑ [60m] Adapter with **document vs query input types**, provider batch limits, truncation setting; owner key from config
+  ☑ [45m] Bounded backoff for rate limits, circuit breaker on repeated failure
+  ☑ [30m] Record model name and vector dimension; fail fast if unexpected
+  ☑ [45m] Local sparse vectors (FastEmbed/BM25), no API
+  ☑ [30m] Usage counter hooks (chunks embedded) for caps in Phase 5
 
-☐ **P3-T6 🔴 Qdrant store with scope** (P0) · *Depends on: P3-T5*
-  ☐ [45m] Create collection (dense + sparse) and **payload index on `scope` and `doc_id`**
-  ☐ [45m] `upsert` (idempotent by chunk ID), `hybrid_search(filter)`, `delete_by_scope`, `delete_by_doc`
-  ☐ [30m] Payload matches architecture §6 (including `embed_model`, `embedding_version`, `chunking_version`)
-  ☐ [30m] Integration test against Qdrant Cloud/Docker
+☑ **P3-T6 🔴 Qdrant store with scope** (P0) · *Depends on: P3-T5*
+  ☑ [45m] Create collection (dense + sparse) and **payload index on `scope` and `doc_id`**
+  ☑ [45m] `upsert` (idempotent by chunk ID), `hybrid_search(filter)`, `delete_by_scope`, `delete_by_doc`
+  ☑ [30m] Payload matches architecture §6 (including `embed_model`, `embedding_version`, `chunking_version`)
+  ☑ [30m] Integration test against Qdrant Cloud/Docker
 
-☐ **P3-T7 SQL schema (no keys)** (P0) · *Depends on: P0-T2*
-  ☐ [60m] Tables: `sessions` (with usage counters), `jobs`, `documents`, `parents`, `parse_cache`, `usage_daily`
-  ☐ [30m] Migration/setup script
-  ☐ [30m] Parent fetch by `parent_id` **and** `scope`
-  ☐ [30m] Test: schema contains no key columns; no secret ever written
+☑ **P3-T7 SQL schema (no keys)** (P0) · *Depends on: P0-T2*
+  ☑ [60m] Tables: `sessions` (with usage counters), `jobs`, `documents`, `parents`, `parse_cache`, `usage_daily`
+  ☑ [30m] Migration/setup script
+  ☑ [30m] Parent fetch by `parent_id` **and** `scope`
+  ☑ [30m] Test: schema contains no key columns; no secret ever written
 
-☐ **P3-T8 Embedding version pinning** (P0) · *Depends on: P3-T6, P3-T7*
-  ☐ [30m] `embedding_version` constant stored in payload and documents
-  ☐ [45m] Query-time check: refuse (clear error) if the index version differs from the configured one
-  ☐ [45m] `scripts/reembed_demo.py` to rebuild the demo corpus and expire sessions when the version changes
+☑ **P3-T8 Embedding version pinning** (P0) · *Depends on: P3-T6, P3-T7*
+  ☑ [30m] `embedding_version` constant stored in payload and documents
+  ☑ [45m] Query-time check: refuse (clear error) if the index version differs from the configured one
+  ☑ [45m] `scripts/reembed_demo.py` to rebuild the demo corpus and expire sessions when the version changes
 
-☐ **P3-T9 Demo corpus ingestion (offline)** (P0) · *Depends on: P3-T6, P3-T7, P2-T3*
-  ☐ [45m] Ingestion script (your own keys) writing `scope = "demo"`
-  ☐ [30m] Verify counts in Qdrant vs SQL; spot-check 10 chunks
-  ☐ [30m] Draft 8-10 example-question chips for the demo corpus
+☑ **P3-T9 Demo corpus ingestion (offline)** (P0) · *Depends on: P3-T6, P3-T7, P2-T3*
+  ☑ [45m] Ingestion script (your own keys) writing `scope = "demo"`
+  ☑ [30m] Verify counts in Qdrant vs SQL; spot-check 10 chunks
+  ☑ [30m] Draft 8-10 example-question chips for the demo corpus
 
 Priority: **P0** · Complexity: **High**
 
@@ -325,46 +325,46 @@ Priority: **P0** · Complexity: **High**
 
 ## Checklist
 
-☐ **P4-T1 🔴 Hybrid search with mandatory scope filter** (P0) · *Depends on: P3-T6, P3-T8*
-  ☐ [45m] Embed query with Cohere (query input type), dense + sparse, RRF fusion, top 30-50
-  ☐ [30m] Filter `scope IN [session_id, "demo"]` set by server code only; **function has no client-filter parameter**
-  ☐ [30m] Tests: other scope returns nothing
+☑ **P4-T1 🔴 Hybrid search with mandatory scope filter** (P0) · *Depends on: P3-T6, P3-T8*
+  ☑ [45m] Embed query with Cohere (query input type), dense + sparse, RRF fusion, top 30-50
+  ☑ [30m] Filter `scope IN [session_id, "demo"]` set by server code only; **function has no client-filter parameter**
+  ☑ [30m] Tests: other scope returns nothing
 
-☐ **P4-T2 Cohere Rerank behind `IReranker`** (P0) · *Depends on: P4-T1*
-  ☐ [60m] Adapter (same Cohere key); keep top 5
-  ☐ [45m] Short timeout, one retry for transient errors, fallback to hybrid order with a response flag
-  ☐ [30m] Usage counter hook (rerank calls)
-  ☐ [30m] Test fallback with a simulated outage
+☑ **P4-T2 Cohere Rerank behind `IReranker`** (P0) · *Depends on: P4-T1*
+  ☑ [60m] Adapter (same Cohere key); keep top 5
+  ☑ [45m] Short timeout, one retry for transient errors, fallback to hybrid order with a response flag
+  ☑ [30m] Usage counter hook (rerank calls)
+  ☑ [30m] Test fallback with a simulated outage
 
-☐ **P4-T3 Not-found gate (stub threshold)** (P0) · *Depends on: P4-T2*
-  ☐ [30m] Refuse when best rerank score is below a configurable threshold, **before any LLM call**
-  ☐ [15m] Placeholder value; real value set in Phase 7
+☑ **P4-T3 Not-found gate (stub threshold)** (P0) · *Depends on: P4-T2*
+  ☑ [30m] Refuse when best rerank score is below a configurable threshold, **before any LLM call**
+  ☑ [15m] Placeholder value; real value set in Phase 7
 
-☐ **P4-T4 Parent/window expansion with budget** (P0) · *Depends on: P4-T2, P3-T7*
-  ☐ [45m] Parent ≤ expand max → whole parent; else child ± 1 neighbor
-  ☐ [45m] Context budget capped by the active LLM's context window; dedupe overlaps
-  ☐ [30m] Tests: budget never exceeded; scope honored
+☑ **P4-T4 Parent/window expansion with budget** (P0) · *Depends on: P4-T2, P3-T7*
+  ☑ [45m] Parent ≤ expand max → whole parent; else child ± 1 neighbor
+  ☑ [45m] Context budget capped by the active LLM's context window; dedupe overlaps
+  ☑ [30m] Tests: budget never exceeded; scope honored
 
-☐ **P4-T5 LLM adapters (owner default + BYOK)** (P0) · *Depends on: P4-T4, P1-T3, P1-T5*
-  ☐ [60m] Owner-default LLM adapter with streaming and **output-token cap**
-  ☐ [60m] BYOK LLM adapter #1 (visitor key, request-scoped)
-  ☐ [60m] BYOK LLM adapter #2
-  ☐ [45m] Numbered, delimited, **untrusted** context prompt; ignore commands inside documents
-  ☐ [30m] "Generation unavailable" fallback that still returns sources; visitor-key errors reported without retry
+☑ **P4-T5 LLM adapters (owner default + BYOK)** (P0) · *Depends on: P4-T4, P1-T3, P1-T5*
+  ☑ [60m] Owner-default LLM adapter with streaming and **output-token cap**
+  ☑ [60m] BYOK LLM adapter #1 (visitor key, request-scoped)
+  ☑ [60m] BYOK LLM adapter #2
+  ☑ [45m] Numbered, delimited, **untrusted** context prompt; ignore commands inside documents
+  ☑ [30m] "Generation unavailable" fallback that still returns sources; visitor-key errors reported without retry
 
-☐ **P4-T6 🔴 Citation check** (P0) · *Depends on: P4-T5*
-  ☐ [45m] Verify every cited ID exists in the context; drop/flag invalid
-  ☐ [30m] Attach breadcrumb + page to each source
-  ☐ [30m] Tests with fabricated IDs
+☑ **P4-T6 🔴 Citation check** (P0) · *Depends on: P4-T5*
+  ☑ [45m] Verify every cited ID exists in the context; drop/flag invalid
+  ☑ [30m] Attach breadcrumb + page to each source
+  ☑ [30m] Tests with fabricated IDs
 
-☐ **P4-T7 Conditional query rewrite** (P1) · *Depends on: P4-T5*
-  ☐ [45m] One cheap rewrite call (same LLM), only for follow-ups
-  ☐ [30m] Tests on 3 follow-up examples
+☑ **P4-T7 Conditional query rewrite** (P1) · *Depends on: P4-T5*
+  ☑ [45m] One cheap rewrite call (same LLM), only for follow-ups
+  ☑ [30m] Tests on 3 follow-up examples
 
-☐ **P4-T8 CLI Q&A** (P0) · *Depends on: P4-T6*
-  ☐ [45m] `python -m src.cli ask "question"` printing answer, sources, timings and token usage
-  ☐ [45m] Ask 15 questions with the **owner LLM** and again with a **BYOK LLM key**; log differences in `docs/ISSUES.md`
-  ☐ [30m] Include 3 unanswerable questions and one run with Cohere Rerank disabled
+☑ **P4-T8 CLI Q&A** (P0) · *Depends on: P4-T6*
+  ☑ [45m] `python -m src.cli ask "question"` printing answer, sources, timings and token usage
+  ☑ [45m] Ask 15 questions with the **owner LLM** and again with a **BYOK LLM key**; log differences in `docs/ISSUES.md`
+  ☑ [30m] Include 3 unanswerable questions and one run with Cohere Rerank disabled
 
 Priority: **P0** · Complexity: **High**
 
@@ -385,42 +385,42 @@ Priority: **P0** · Complexity: **High**
 
 ## Checklist
 
-☐ **P5-T1 🔴 Sessions and server-derived scope** (P0) · *Depends on: P3-T7, P1-T4*
-  ☐ [45m] `POST /session` issues a random token (HTTP-only cookie or bearer)
-  ☐ [30m] Middleware maps token → `scope`; never trusts client scope/filters
-  ☐ [30m] Expiry (`expires_at`), tier detection, counters in SQL
+☑ **P5-T1 🔴 Sessions and server-derived scope** (P0) · *Depends on: P3-T7, P1-T4*
+  ☑ [45m] `POST /session` issues a random token (HTTP-only cookie or bearer)
+  ☑ [30m] Middleware maps token → `scope`; never trusts client scope/filters
+  ☑ [30m] Expiry (`expires_at`), tier detection, counters in SQL
 
-☐ **P5-T2 🔴 Owner cost caps** (P0) · *Depends on: P5-T1, P3-T5, P4-T2*
-  ☐ [60m] Per-session caps: chunks embedded, rerank calls, owner-LLM questions, own-LLM-key questions, documents (atomic counter updates)
-  ☐ [45m] Per-IP rate limits and daily per-IP questions/uploads
-  ☐ [45m] Daily global caps (`usage_daily`) for chunks, rerank calls, LLM tokens, jobs
-  ☐ [45m] **"Demo at capacity" mode** when a global cap is hit (friendly message, demo-corpus read-only or paused)
-  ☐ [30m] Tests: caps trigger; owner LLM is never called after its cap
+☑ **P5-T2 🔴 Owner cost caps** (P0) · *Depends on: P5-T1, P3-T5, P4-T2*
+  ☑ [60m] Per-session caps: chunks embedded, rerank calls, owner-LLM questions, own-LLM-key questions, documents (atomic counter updates)
+  ☑ [45m] Per-IP rate limits and daily per-IP questions/uploads
+  ☑ [45m] Daily global caps (`usage_daily`) for chunks, rerank calls, LLM tokens, jobs
+  ☑ [45m] **"Demo at capacity" mode** when a global cap is hit (friendly message, demo-corpus read-only or paused)
+  ☑ [30m] Tests: caps trigger; owner LLM is never called after its cap
 
-☐ **P5-T3 🔴 Kill switch and budget guards** (P0) · *Depends on: P5-T2*
-  ☐ [45m] Config flags to disable uploads and/or owner-LLM answers instantly (no redeploy)
-  ☐ [30m] Alert hooks at 50% and 80% of daily/monthly budget (email/webhook)
-  ☐ [30m] Re-verify provider-side hard budgets on Cohere and the LLM
+☑ **P5-T3 🔴 Kill switch and budget guards** (P0) · *Depends on: P5-T2*
+  ☑ [45m] Config flags to disable uploads and/or owner-LLM answers instantly (no redeploy)
+  ☑ [30m] Alert hooks at 50% and 80% of daily/monthly budget (email/webhook)
+  ☑ [30m] Re-verify provider-side hard budgets on Cohere and the LLM
 
-☐ **P5-T4 Demo mode (Tier A)** (P0) · *Depends on: P5-T1, P4-T8, P3-T9*
-  ☐ [45m] Chat works with no keys over `scope = "demo"` (read-only)
-  ☐ [30m] Stricter demo limits (questions per session/IP)
-  ☐ [30m] `GET /examples` endpoint serving the example-question chips
-  ☐ [30m] Test: demo scope cannot be written to by visitors
+☑ **P5-T4 Demo mode (Tier A)** (P0) · *Depends on: P5-T1, P4-T8, P3-T9*
+  ☑ [45m] Chat works with no keys over `scope = "demo"` (read-only)
+  ☑ [30m] Stricter demo limits (questions per session/IP)
+  ☑ [30m] `GET /examples` endpoint serving the example-question chips
+  ☑ [30m] Test: demo scope cannot be written to by visitors
 
-☐ **P5-T5 Chat endpoint with optional LLM key** (P0) · *Depends on: P5-T2, P4-T6, P1-T4*
-  ☐ [45m] `POST /chat`: request ID, optional LLM key header, tier-based limits (higher with own key)
-  ☐ [30m] Max question length; light prompt-injection screen
-  ☐ [30m] If the visitor key fails (invalid/quota), report clearly and offer the owner default within caps
-  ☐ [30m] `GET /usage` returns remaining allowance for the meter
+☑ **P5-T5 Chat endpoint with optional LLM key** (P0) · *Depends on: P5-T2, P4-T6, P1-T4*
+  ☑ [45m] `POST /chat`: request ID, optional LLM key header, tier-based limits (higher with own key)
+  ☑ [30m] Max question length; light prompt-injection screen
+  ☑ [30m] If the visitor key fails (invalid/quota), report clearly and offer the owner default within caps
+  ☑ [30m] `GET /usage` returns remaining allowance for the meter
 
-☐ **P5-T6 Privacy-safe logging in chat paths** (P0) · *Depends on: P5-T5*
-  ☐ [30m] Log only metadata (request ID, tier, timings, counts); no question or document text for uploaded scopes
-  ☐ [30m] Re-run the key-leak grep test against `/chat` and `/connections/test`
+☑ **P5-T6 Privacy-safe logging in chat paths** (P0) · *Depends on: P5-T5*
+  ☑ [30m] Log only metadata (request ID, tier, timings, counts); no question or document text for uploaded scopes
+  ☑ [30m] Re-run the key-leak grep test against `/chat` and `/connections/test`
 
-☐ **P5-T7 Start isolation tests** (P1) · *Depends on: P5-T5*
-  ☐ [45m] Session A cannot read B's chunks or parents
-  ☐ [30m] Client-supplied filters ignored
+☑ **P5-T7 Start isolation tests** (P1) · *Depends on: P5-T5*
+  ☑ [45m] Session A cannot read B's chunks or parents
+  ☑ [30m] Client-supplied filters ignored
 
 Priority: **P0** · Complexity: **High**
 
@@ -441,47 +441,47 @@ Priority: **P0** · Complexity: **High**
 
 ## Checklist
 
-☐ **P6-T1 🔴 Upload validation** (P0) · *Depends on: P5-T1, P2-T8*
-  ☐ [45m] Magic-byte check, extension, max size
-  ☐ [30m] Reject encrypted PDFs with a clear message
-  ☐ [30m] Max pages per document, documents and total pages per session
-  ☐ [45m] Tests for every rejection
+☑ **P6-T1 🔴 Upload validation** (P0) · *Depends on: P5-T1, P2-T8*
+  ☑ [45m] Magic-byte check, extension, max size
+  ☑ [30m] Reject encrypted PDFs with a clear message
+  ☑ [30m] Max pages per document, documents and total pages per session
+  ☑ [45m] Tests for every rejection
 
-☐ **P6-T2 Estimate and confirm** (P0) · *Depends on: P6-T1, P1-T7*
-  ☐ [45m] Local page count and chunk estimate; show parser-page usage on the visitor key and share of the session's free chunk allowance
-  ☐ [30m] Parser-key "Test key" check before confirm
-  ☐ [30m] Separate confirm step before any provider call
+☑ **P6-T2 Estimate and confirm** (P0) · *Depends on: P6-T1, P1-T7*
+  ☑ [45m] Local page count and chunk estimate; show parser-page usage on the visitor key and share of the session's free chunk allowance
+  ☑ [30m] Parser-key "Test key" check before confirm
+  ☑ [30m] Separate confirm step before any provider call
 
-☐ **P6-T3 🔴 Job runner and parser-key lifecycle** (P0) · *Depends on: P6-T2, P3-T4, P2-T7, P5-T2*
-  ☐ [60m] In-process runner, concurrency 1-2, others queued
-  ☐ [45m] States: queued → parsing → chunking → embedding → indexing → ready | failed
-  ☐ [60m] Parser key in memory for the job only; discarded in `finally`
-  ☐ [60m] Pipeline: parse → normalize → quality gate → chunk → fuse → Cohere embed (cap-checked) → upsert with `scope`
-  ☐ [45m] Interrupted job → `failed: interrupted`; delete partial vectors by `doc_id`; re-submit is idempotent (deterministic IDs)
-  ☐ [30m] Provider errors mapped to friendly messages; no retry storms on the visitor key
+☑ **P6-T3 🔴 Job runner and parser-key lifecycle** (P0) · *Depends on: P6-T2, P3-T4, P2-T7, P5-T2*
+  ☑ [60m] In-process runner, concurrency 1-2, others queued
+  ☑ [45m] States: queued → parsing → chunking → embedding → indexing → ready | failed
+  ☑ [60m] Parser key in memory for the job only; discarded in `finally`
+  ☑ [60m] Pipeline: parse → normalize → quality gate → chunk → fuse → Cohere embed (cap-checked) → upsert with `scope`
+  ☑ [45m] Interrupted job → `failed: interrupted`; delete partial vectors by `doc_id`; re-submit is idempotent (deterministic IDs)
+  ☑ [30m] Provider errors mapped to friendly messages; no retry storms on the visitor key
 
-☐ **P6-T4 Quality warning and local fallback** (P1) · *Depends on: P6-T3*
-  ☐ [30m] Surface failed quality checks with "try a different parser"
-  ☐ [45m] Optional one-time local re-parse when coverage is very low
+☑ **P6-T4 Quality warning and local fallback** (P1) · *Depends on: P6-T3*
+  ☑ [30m] Surface failed quality checks with "try a different parser"
+  ☑ [45m] Optional one-time local re-parse when coverage is very low
 
-☐ **P6-T5 Session-scoped parse cache** (P1) · *Depends on: P6-T3*
-  ☐ [45m] Cache by `(session, content_hash, parser, parser_version)`; never includes keys
-  ☐ [30m] Test: not readable from another session
+☑ **P6-T5 Session-scoped parse cache** (P1) · *Depends on: P6-T3*
+  ☑ [45m] Cache by `(session, content_hash, parser, parser_version)`; never includes keys
+  ☑ [30m] Test: not readable from another session
 
-☐ **P6-T6 🔴 TTL cleaner and "Delete my data"** (P0) · *Depends on: P6-T3, P3-T6*
-  ☐ [60m] Scheduled cleaner deletes expired sessions: vectors by `scope` in Qdrant, SQL rows, cache, files
-  ☐ [30m] `DELETE /session` deletes the same immediately (**no key needed**)
-  ☐ [45m] Test: everything for an expired session is gone
+☑ **P6-T6 🔴 TTL cleaner and "Delete my data"** (P0) · *Depends on: P6-T3, P3-T6*
+  ☑ [60m] Scheduled cleaner deletes expired sessions: vectors by `scope` in Qdrant, SQL rows, cache, files
+  ☑ [30m] `DELETE /session` deletes the same immediately (**no key needed**)
+  ☑ [45m] Test: everything for an expired session is gone
 
-☐ **P6-T7 🔴 Isolation and key-leak suite (full)** (P0) · *Depends on: P6-T3, P5-T7*
-  ☐ [60m] Session isolation across upload, jobs, chat, parents, cache, files
-  ☐ [45m] Grep test for fake parser and LLM keys across upload, jobs, chat, errors, traces, SQL, cache
-  ☐ [30m] Egress allowlist tests through real endpoints
+☑ **P6-T7 🔴 Isolation and key-leak suite (full)** (P0) · *Depends on: P6-T3, P5-T7*
+  ☑ [60m] Session isolation across upload, jobs, chat, parents, cache, files
+  ☑ [45m] Grep test for fake parser and LLM keys across upload, jobs, chat, errors, traces, SQL, cache
+  ☑ [30m] Egress allowlist tests through real endpoints
 
-☐ **P6-T8 Tier and parser selection tests** (P1) · *Depends on: P6-T3, P5-T5*
-  ☐ [30m] Only the selected parser is invoked
-  ☐ [30m] Invalid parser key → friendly error, no retry
-  ☐ [45m] Tier B (local parser) and Tier C (own LLM key) scripted end-to-end checks
+☑ **P6-T8 Tier and parser selection tests** (P1) · *Depends on: P6-T3, P5-T5*
+  ☑ [30m] Only the selected parser is invoked
+  ☑ [30m] Invalid parser key → friendly error, no retry
+  ☑ [45m] Tier B (local parser) and Tier C (own LLM key) scripted end-to-end checks
 
 Priority: **P0** · Complexity: **High**
 
