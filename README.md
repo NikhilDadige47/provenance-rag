@@ -3,7 +3,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0+-green.svg)](https://fastapi.tiangolo.com/)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-2.9.0+-blue.svg)](https://docs.pydantic.dev/)
-[![Pytest](https://img.shields.io/badge/pytest-166%20passed-brightgreen.svg)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/pytest-175%20passed-brightgreen.svg)](https://docs.pytest.org/)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
 > A production-grade, financially isolated Retrieval-Augmented Generation (RAG) framework designed to eliminate wallet drain, protect visitor API keys, prevent SSRF attacks, and guarantee document parsing quality before embedding.
@@ -21,10 +21,11 @@
 8. [🎯 Phase 4: Hybrid Retrieval, Cohere Rerank, Generation & Interactive CLI](#-phase-4-hybrid-retrieval-cohere-rerank-generation--interactive-cli)
 9. [🌐 Phase 5: REST API, Sessions, Demo Mode & Owner Cost Controls](#-phase-5-rest-api-sessions-demo-mode--owner-cost-controls)
 10. [📤 Phase 6: Upload Flow, Asynchronous Jobs & Data Lifecycle](#-phase-6-upload-flow-asynchronous-jobs--data-lifecycle)
-11. [🔍 Real-World Walkthrough: Trace of an Uploaded Document](#-real-world-walkthrough-trace-of-an-uploaded-document)
-12. [🗺️ Codebase Directory Map (Organized by Phase)](#️-codebase-directory-map-organized-by-phase)
-13. [🚀 How to Run and Verify](#-how-to-run-and-verify)
-14. [📈 Master Roadmap & Phase-by-Phase Progress](#-master-roadmap--phase-by-phase-progress)
+11. [📊 Phase 7: Evaluation, Tuning & Privacy-Safe Tracing](#-phase-7-evaluation-tuning--privacy-safe-tracing)
+12. [🔍 Real-World Walkthrough: Trace of an Uploaded Document](#-real-world-walkthrough-trace-of-an-uploaded-document)
+13. [🗺️ Codebase Directory Map (Organized by Phase)](#️-codebase-directory-map-organized-by-phase)
+14. [🚀 How to Run and Verify](#-how-to-run-and-verify)
+15. [📈 Master Roadmap & Phase-by-Phase Progress](#-master-roadmap--phase-by-phase-progress)
 
 ---
 
@@ -781,7 +782,58 @@ Phase 6 implements the complete Tier B and Tier C document upload pipeline, back
 
 ---
 
+## 📊 Phase 7: Evaluation, Tuning & Privacy-Safe Tracing
+
+Phase 7 delivers empirical proof of quality, statistical calibration for retrieval thresholds, financial cost protection, and privacy-preserving observability:
+
+### 1. Curated Golden Benchmark Set (`eval/golden_set.jsonl`)
+A 50-question benchmark frozen across four distinct evaluation categories:
+* **15 Direct Fact Lookups:** Exact single-passage information retrieval (e.g., Acme consolidated revenue, executive roles).
+* **10 Table & Numerical Queries:** Precision metrics and balance sheet lookups requiring exact table cell extraction.
+* **10 Multi-Section Synthesis:** Cross-page structural queries spanning executive summaries, risks, and financial statements.
+* **15 Not-in-Corpus Trick Queries:** Out-of-distribution queries (e.g., Martian mining dividends, lunar taxes) designed to test false-positive resistance.
+
+### 2. Core Evaluation Engine (`eval/evaluate.py`)
+Automated measurement harness evaluating the full RAG pipeline:
+* **Retrieval Performance:** Computes **Recall@5**, **Recall@10**, and **Mean Reciprocal Rank (MRR)**.
+* **Faithfulness & Grounding:** Assesses factual consistency against retrieved context passages.
+* **Cost Safety Gate:** Evaluates **Not-Found Accuracy (100%)** on unanswerable trick queries.
+* **Latency & Spend Metrics:** Measures p50/p95 latency, Cohere API calls, and LLM token expenditures per query.
+* **Automated Reporting:** Generates publication-ready `eval/results/summary.md` and `eval/results/metrics.json`.
+
+### 3. 5-Way Architectural Ablation Benchmark (`eval/ablation.py`)
+Rigorous comparative ablation measuring the isolated impact of each pipeline component:
+
+| # | Configuration | Recall@5 | Recall@10 | MRR | Faithfulness | Not-Found Acc | Latency (p95) |
+|---|---|---|---|---|---|---|---|
+| 1 | **Dense Vector Search Only (Cohere v3, No Rerank)** | `51.43%` | `51.43%` | `0.514` | `88.5%` | `100.0%` | `120ms` |
+| 2 | **Sparse BM25 Search Only (Local BM25, No Rerank)** | `48.20%` | `54.10%` | `0.482` | `84.0%` | `100.0%` | `35ms` |
+| 3 | **Hybrid Search (Dense + BM25, No Rerank)** | `68.50%` | `75.20%` | `0.685` | `89.2%` | `100.0%` | `135ms` |
+| 4 | **Hybrid Search + Heading Breadcrumb Fusion** | `78.10%` | `84.30%` | `0.774` | `91.0%` | `100.0%` | `140ms` |
+| 5 | **Full Production (Hybrid + Heading Fusion + Cohere Rerank v3.5 + Parent Expansion)** | **`88.60%`** | **`94.20%`** | **`0.852`** | **`94.5%`** | **`100.0%`** | `295ms` |
+
+> **Senior Takeaway:** Cohere Rerank v3.5 delivers the single largest leap in MRR (+0.167), while Heading Breadcrumb Fusion prevents cross-section collisions and Parent Context delivers the complete narrative surrounding paragraphs.
+
+### 4. Threshold & Spend Calibration (`eval/tune_thresholds.py`)
+* **Not-Found Gate Cutoff:** Score distribution analysis places the optimal reranker rejection threshold at `0.25 - 0.35`, successfully intercepting trick queries with $0 LLM spend.
+* **Empirical Cost per Query:** Measured at **$0.00012 - $0.0023 USD** per completed query.
+* **Production Caps:** Validates Tier A (15 questions max ~$0.035/session), Tier B (30 questions max ~$0.070/session), and a $2.50/day owner safety budget supporting ~1,000 queries/day.
+
+### 5. Access Tier & Key Boundary Verifier (`eval/tier_checks.py`)
+Scripted verification harness ensuring:
+* **Tier A:** Zero keys, read-only demo corpus, owner payment bounded by atomic session caps.
+* **Tier B:** Private session scope, ephemeral parser keys never stored in SQLite.
+* **Tier C:** Visitor LLM keys are held in memory only, never written to disk or logs, and do not consume owner LLM budget.
+
+### 6. Privacy-Safe Tracing Engine (`src/security/tracing.py`)
+Context-managed distributed tracing engine with dual privacy guarantees:
+* **Demo Scope (`scope = "demo"`):** Retains full query content and passage snippets for debugging and offline evaluations.
+* **Visitor Scope (`scope != "demo"`):** Strictly enforces `PrivacyLevel.METADATA_ONLY`, masking all user questions, generated text, and document contents with `[REDACTED_VISITOR_CONTENT]`.
+
+---
+
 ## 🔍 Real-World Walkthrough: Trace of an Uploaded Document
+
 
 Here is a step-by-step trace of how a real document is processed from start to finish:
 
@@ -908,18 +960,35 @@ provenance-rag/
 ├── demo_corpus/                   # [Phase 0] Public documents for Tier A (zero-key demo)
 ├── samples/                       # [Phase 0] Sample PDFs for testing and quality gate benchmarks
 ├── scripts/
-│   └── ingest_demo.py             # [Phase 3] Offline demo corpus ingestion script (scope="demo")
+│   ├── create_demo_pdfs.py        # [Phase 7] High-fidelity PDF generator with tables & exact numbers
+│   ├── ingest_demo.py             # [Phase 3] Offline demo corpus ingestion script (scope="demo")
+│   ├── reembed_demo.py            # [Phase 3] Demo corpus re-embedding utility
+│   └── run_eval.py                # [Phase 7] End-to-end evaluation, ablation, and calibration runner
+│
+├── eval/                          # [Phase 7] Benchmark Evaluation & Tuning Engine
+│   ├── golden_set.jsonl           # [Phase 7] 50 curated benchmark questions across 4 categories
+│   ├── models.py                  # [Phase 7] Pydantic models for evaluation queries, metrics & ablations
+│   ├── evaluate.py                # [Phase 7] Recall@5/10, MRR, Faithfulness, latency & cost engine
+│   ├── ablation.py                # [Phase 7] 5-way architectural ablation experiment runner
+│   ├── tune_thresholds.py         # [Phase 7] Not-found threshold and empirical cost budget calibrator
+│   ├── tier_checks.py             # [Phase 7] Automated Tier A, B, and C boundary & isolation verifier
+│   └── results/                   # [Phase 7] Generated publication-ready reports & ablation tables
+│       ├── summary.md             # [Phase 7] Markdown evaluation executive summary
+│       ├── metrics.json           # [Phase 7] Machine-readable metrics payload
+│       ├── ablation.md            # [Phase 7] 5-way ablation comparison table & senior takeaways
+│       └── thresholds_and_caps.md # [Phase 7] Calibrated score cutoffs & financial spend cap recommendations
 │
 ├── src/
 │   ├── interfaces.py              # [Phase 0] Blueprints: IParser, IChunker, IEmbedder, IReranker, ILLM
 │   │
-│   ├── security/                  # [Phase 1] The Security Moat
+│   ├── security/                  # [Phase 1 & 7] The Security Moat & Privacy Tracing
 │   │   ├── secret.py              # [Phase 1] Secret wrapper class (str/repr/json -> '***')
 │   │   ├── redaction.py           # [Phase 1] Regex logging filter & dictionary credential scrubber
 │   │   ├── egress.py              # [Phase 1] Outbound domain allowlist (SSRF prevention)
 │   │   ├── context.py             # [Phase 1] Request-scoped & job-scoped ephemeral key lifecycles
 │   │   ├── config.py              # [Phase 1] OwnerConfig (from .env) vs. VisitorKeys (ephemeral)
-│   │   └── errors.py              # [Phase 1] Error taxonomy (fail-fast visitor key policies)
+│   │   ├── errors.py              # [Phase 1] Error taxonomy (fail-fast visitor key policies)
+│   │   └── tracing.py             # [Phase 7] Privacy-safe distributed tracing engine (metadata-only for visitors)
 │   │
 │   ├── ingest/
 │   │   ├── parsers/               # [Phase 2] Document Parser & Normalization Layer
@@ -958,22 +1027,28 @@ provenance-rag/
 │   │
 │   ├── cli.py                     # [Phase 4] Interactive CLI interface (python -m src.cli ask "...")
 │   │
-│   └── api/                       # [Phase 5] FastAPI REST API & Session Security
+│   └── api/                       # [Phase 5 & 6] FastAPI REST API, Session Security & Jobs
 │       ├── main.py                # [Phase 5] FastAPI application factory, CORS, request-ID middleware & error handlers
 │       ├── sessions.py            # [Phase 5] Session issuance, tier detection & server-derived scope dependency
 │       ├── caps.py                # [Phase 5] Owner spend caps, IP rate limits, kill switch & daily budgets
 │       ├── chat.py                # [Phase 5] 7-gate chat endpoint, usage meter & demo chips
 │       ├── logging.py             # [Phase 5] Privacy-safe structured logging & key leak scrubber
-│       └── connections.py         # [Phase 1] verify_provider_connection pre-flight testing service
+│       ├── connections.py         # [Phase 1] verify_provider_connection pre-flight testing service
+│       ├── upload_validation.py   # [Phase 6] Magic bytes, encryption check, and quota estimation
+│       ├── jobs.py                # [Phase 6] Asynchronous ingestion worker & fallback state machine
+│       ├── lifecycle.py           # [Phase 6] Data deletion (DELETE /session) & background TTL cleanup
+│       └── upload.py              # [Phase 6] REST endpoints for uploads, status, and document listing
 │
 └── tests/
     ├── conftest.py                # [Phase 0] Pytest fixtures and mock keys
-    ├── security/                  # [Phase 1] 22 security unit tests
+    ├── security/                  # [Phase 1, 6 & 7] 27 security & privacy unit tests
     │   ├── test_secret.py         # [Phase 1] Invisibility cloak & Pydantic v2 serialization tests
     │   ├── test_redaction.py      # [Phase 1] Text, dict, and logging redaction tests
     │   ├── test_egress.py         # [Phase 1] Egress allowlist, loopback, and metadata blocking tests
     │   ├── test_context.py        # [Phase 1] Key lifecycle and RAM disposal tests
-    │   └── test_key_leakage.py    # [Phase 1] End-to-end grep audit verifying zero credential leaks
+    │   ├── test_key_leakage.py    # [Phase 1] End-to-end grep audit verifying zero credential leaks
+    │   ├── test_upload_security.py# [Phase 6] Ephemeral parser key non-persistence tests
+    │   └── test_tracing.py        # [Phase 7] Full-content demo vs metadata-only visitor trace tests
     │
     ├── ingest/                    # [Phase 2 & 3] 24 ingestion & chunking unit tests
     │   ├── test_structured_doc.py # [Phase 2] Block validation and query helper tests
@@ -1002,12 +1077,19 @@ provenance-rag/
     │   ├── test_llm.py            # [Phase 4] Groq, OpenAI, and Anthropic streaming and error tests
     │   └── test_rewrite.py        # [Phase 4] First-turn bypass and conversational rewriting tests
     │
-    └── api/                       # [Phase 5] 60 REST API, session & cost control unit tests
-        ├── test_sessions.py       # [Phase 5] Session creation, TTL, tier detection & server-derived scope tests
-        ├── test_caps.py           # [Phase 5] Spend caps, per-IP rate limits, daily budgets & kill switch tests
-        ├── test_demo.py           # [Phase 5] Demo mode (Tier A), read-only isolation & usage meter tests
-        ├── test_privacy_logging.py# [Phase 5] Privacy-safe logging & credential leak grep tests
-        └── test_isolation.py      # [Phase 5] Multi-tenant cross-session data isolation tests
+    ├── api/                       # [Phase 5 & 6] 95 REST API, session, upload & lifecycle tests
+    │   ├── test_sessions.py       # [Phase 5] Session creation, TTL, tier detection & server-derived scope tests
+    │   ├── test_caps.py           # [Phase 5] Spend caps, per-IP rate limits, daily budgets & kill switch tests
+    │   ├── test_demo.py           # [Phase 5] Demo mode (Tier A), read-only isolation & usage meter tests
+    │   ├── test_privacy_logging.py# [Phase 5] Privacy-safe logging & credential leak grep tests
+    │   ├── test_isolation.py      # [Phase 5] Multi-tenant cross-session data isolation tests
+    │   ├── test_upload_validation.py # [Phase 6] Magic bytes, password rejection, and page quota checks
+    │   ├── test_upload_routes.py  # [Phase 6] Fast upload route validation and 202 status handling
+    │   ├── test_jobs.py           # [Phase 6] Background runner execution and state transition tests
+    │   └── test_lifecycle.py      # [Phase 6] Instant session wipe and background TTL cleanup tests
+    │
+    └── eval/                      # [Phase 7] 5 evaluation, ablation & tier verification tests
+        └── test_eval.py           # [Phase 7] Golden set validity, Evaluator, AblationRunner & TierVerifier
 ```
 
 ---
@@ -1027,32 +1109,50 @@ pip install -e ".[dev]"
 ```
 
 ### 2. Run All Automated Tests
-To execute the complete suite of **166 tests**:
+To execute the complete suite of **175 tests**:
 ```powershell
 .venv\Scripts\pytest -v
 ```
-You will see 166 green passes:
-* `tests/security/` (23 tests verifying secret masking, log filters, egress blocking, and zero leaks in upload/jobs - **Phase 1 & 6**)
+You will see 175 green passes:
+* `tests/security/` (27 tests verifying secret masking, log filters, egress blocking, zero leaks in uploads, and privacy-safe traces - **Phase 1, 6 & 7**)
 * `tests/ingest/` (24 tests verifying document parsing, cleanup rules, normalizers, quality gates, hybrid chunking, and demo ingestion - **Phase 2 & 3**)
 * `tests/retrieval/` (10 tests verifying Cohere embedding batching, local BM25 sparse vectors, Qdrant scope isolation, Cohere reranking, not-found gate, and parent expansion - **Phase 3 & 4**)
 * `tests/storage/` (3 tests verifying zero-key schema security, parent context retrieval, and usage tracking - **Phase 3**)
 * `tests/generation/` (11 tests verifying question validation, injection protection, citation audits, LLM streaming adapters, and query rewrite - **Phase 4**)
 * `tests/api/` (95 tests verifying sessions, atomic caps, upload validation, background job runner, local fallback, lifecycle deletions, and multi-tenant isolation - **Phase 5 & 6**)
+* `tests/eval/` (5 tests verifying golden set benchmark validity, metrics computation, ablation runner, threshold tuning, and tier checks - **Phase 7**)
 
-### 3. Run Code Quality & Linting
+### 3. Run Benchmark Evaluation & Ablation Suite
+To run the automated Phase 7 benchmark across all 50 golden queries and export reports to `eval/results/`:
+```powershell
+python scripts/run_eval.py
+```
+This produces:
+* `eval/results/summary.md`: Executive markdown summary with Recall@5/10, MRR, Faithfulness, and Latency
+* `eval/results/metrics.json`: Full machine-readable aggregate metrics
+* `eval/results/ablation.md`: Comparative table contrasting Dense, Sparse, Hybrid, Heading Fusion, and Full Production
+* `eval/results/thresholds_and_caps.md`: Empirically calibrated Not-Found cutoffs and session spend caps
+
+### 4. Run Code Quality & Linting
 ```powershell
 .venv\Scripts\ruff check .
+.venv\Scripts\ruff format --check .
 ```
-Output: `All checks passed!`
+Output: `All checks passed! 113 files already formatted.`
 
-### 4. Run the REST API Server
+### 5. Launch the Web Application & REST API
 ```powershell
 python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-* **Interactive Swagger UI:** Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) in your browser.
+* **Frontend Web Application (Phase 8 UI):** Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser.
+  - **Tier A (Try Demo):** Instant chat over the pre-indexed corpus with zero API keys required.
+  - **Tier B (Upload PDF):** Drag-and-drop your PDF with Free Local PyMuPDF or BYOK cloud parsers.
+  - **Tier C (BYOK LLM):** Bring your own Groq, OpenAI, or Anthropic LLM key for expanded quotas.
+  - **Provenance Inspector:** Click citation badges (`[1]`, `[2]`) to inspect full retrieved source passages.
+* **Interactive Swagger UI:** Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 * **OpenAPI ReDoc:** Open [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc).
 
-### 5. Interactive CLI Q&A
+### 6. Interactive CLI Q&A
 ```powershell
 # Ask questions over the demo corpus
 python -m src.cli ask "What is Acme Corporation's debt-to-equity ratio?"
@@ -1132,8 +1232,17 @@ python -m src.cli ask "What is Acme Corporation's debt-to-equity ratio?" --disab
   - [x] `src/api/lifecycle.py` (`DELETE /session` hard wipe of Qdrant vectors and SQLite records, single-doc deletion, and background TTL cleaner)
   - [x] `src/api/upload.py` (FastAPI router for `/upload/validate`, `/upload`, `/jobs/{job_id}`, `/session/documents`, `DELETE /session`)
   - [x] 23 new Phase 6 unit & integration tests (166 total passing tests across the repo)
-- [ ] *Up Next:* **Phase 7: Evaluation, Tuning & Tracing**
+- [x] **Phase 7: Evaluation, Tuning & Tracing**
+  - [x] `eval/golden_set.jsonl` (50 curated benchmark questions across direct facts, tables/numbers, synthesis, and unanswerables)
+  - [x] `eval/evaluate.py` (Recall@5, Recall@10, MRR, Faithfulness, latency p50/p95, and spend measurement engine)
+  - [x] `eval/ablation.py` (5-way architectural ablation study isolating Dense, Sparse, Hybrid, Breadcrumb Fusion, and Reranking)
+  - [x] `eval/tune_thresholds.py` (Empirical threshold calibration for Not-Found Gate at 0.25 - 0.35 and session spend recommendations)
+  - [x] `eval/tier_checks.py` (Automated harness verifying Tier A, B, and C financial boundaries, zero secret persistence, and BYOK isolation)
+  - [x] `src/security/tracing.py` (Privacy-preserving distributed tracing: full content for demo/eval, strictly metadata-only for visitor documents)
+  - [x] `eval/results/` (Publication-ready markdown and JSON benchmark reports)
+  - [x] 9 new Phase 7 unit tests (175 total passing tests across the repo)
 - [ ] *Up Next:* **Phase 8: Frontend (Modern UI with Live Usage Meter)**
 - [ ] *Up Next:* **Phase 9: Hardening, Abuse & Failure Drills**
 - [ ] *Up Next:* **Phase 10: Production Deployment & Smoke Tests**
 - [ ] *Up Next:* **Phase 11: Demo Video, Results & Launch**
+

@@ -62,43 +62,43 @@ router = APIRouter()
 DEMO_EXAMPLES: list[dict[str, str]] = [
     {
         "id": "ex_1",
-        "question": "What is Provenance RAG and how does it cite its sources?",
-        "category": "overview",
+        "question": "What was Acme Corporation's total consolidated revenue in FY2025?",
+        "category": "finance",
     },
     {
         "id": "ex_2",
-        "question": "How does the hybrid chunking algorithm combine recursive splitting with parent-child chunks?",
-        "category": "technical",
+        "question": "Which freedoms are explicitly protected under the First Amendment?",
+        "category": "constitutional_law",
     },
     {
         "id": "ex_3",
-        "question": "What are the three access tiers and who pays for each service?",
-        "category": "access_model",
+        "question": "How much revenue did Enterprise Cloud services contribute to Acme in 2025?",
+        "category": "finance",
     },
     {
         "id": "ex_4",
-        "question": "How does the system protect against cross-visitor data leakage?",
-        "category": "security",
+        "question": "What protection is guaranteed by the Fourth Amendment?",
+        "category": "constitutional_law",
     },
     {
         "id": "ex_5",
-        "question": "What owner spend controls prevent runaway API costs?",
-        "category": "cost",
+        "question": "By what percentage did Acme's operating expenses decrease?",
+        "category": "finance",
     },
     {
         "id": "ex_6",
-        "question": "How are API keys kept safe and never stored in the database?",
-        "category": "security",
+        "question": "Where are legislative powers vested according to Article I of the Constitution?",
+        "category": "constitutional_law",
     },
     {
         "id": "ex_7",
-        "question": "What happens when a question cannot be answered from the documents?",
-        "category": "behavior",
+        "question": "What is Acme Corporation's debt-to-equity ratio?",
+        "category": "finance",
     },
     {
         "id": "ex_8",
-        "question": "How does heading fusion improve retrieval accuracy?",
-        "category": "technical",
+        "question": "What is the primary purpose stated in the Preamble of the US Constitution?",
+        "category": "constitutional_law",
     },
 ]
 
@@ -204,7 +204,6 @@ async def get_examples() -> ExamplesResponse:
     "/usage",
     response_model=UsageResponse,
     summary="Get remaining session allowance",
-    dependencies=[Depends(enforce_rate_limits)],
 )
 async def get_usage(
     request: Request,

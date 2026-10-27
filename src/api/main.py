@@ -28,11 +28,13 @@ import sys
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.api.chat import router as chat_router
@@ -273,3 +275,14 @@ app.include_router(chat_router, tags=["chat"])
 
 # Upload, jobs & lifecycle endpoints: /upload, /upload/validate, /jobs/{id}, /session/documents, DELETE /session
 app.include_router(upload_router, tags=["upload"])
+
+# ---------------------------------------------------------------------------
+# Mount React Single-Page Application (frontend-react/dist)
+# ---------------------------------------------------------------------------
+react_dist = Path(__file__).resolve().parent.parent.parent / "frontend-react" / "dist"
+if react_dist.exists():
+    app.mount("/", StaticFiles(directory=str(react_dist), html=True), name="frontend")
+
+
+
+

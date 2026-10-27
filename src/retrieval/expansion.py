@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.ingest.chunking.tokenizer import estimate_tokens
-from src.retrieval.search import RetrievedChunk
 from src.storage.db import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -37,6 +36,14 @@ class ExpandedContextPassage:
     is_parent_expanded: bool
     source_chunk_ids: list[str]
 
+    @property
+    def page_number(self) -> int:
+        return self.page
+
+    @property
+    def score(self) -> float:
+        return 1.0
+
 
 @dataclass
 class ExpansionResult:
@@ -45,6 +52,10 @@ class ExpansionResult:
     passages: list[ExpandedContextPassage]
     total_tokens: int
     budget_exhausted: bool
+
+    @property
+    def contexts(self) -> list[ExpandedContextPassage]:
+        return self.passages
 
 
 class ContextExpander:
@@ -62,20 +73,13 @@ class ContextExpander:
 
     def expand(
         self,
-        chunks: list[RetrievedChunk],
-        scope: str,
+        chunks: list[Any],
+        scope: str = "demo",
         budget: int | None = None,
+        session_id: str | None = None,
     ) -> ExpansionResult:
-        """Expand retrieved child chunks into parent/window context passages.
-
-        Args:
-            chunks: Scored and reranked child chunks from retrieval.
-            scope: Session identifier (or 'demo') to enforce SQL lookup isolation.
-            budget: Token budget cap (defaults to self.context_budget).
-
-        Returns:
-            ExpansionResult containing ordered, deduplicated context passages.
-        """
+        """Expand retrieved child chunks into parent/window context passages."""
+        active_scope = session_id or scope
         active_budget = budget or self.context_budget
         expanded_passages: list[ExpandedContextPassage] = []
         seen_parent_ids: set[str] = set()
@@ -87,20 +91,20 @@ class ContextExpander:
             if chunk.chunk_id in seen_chunk_ids:
                 continue
 
-            # Check if this chunk's parent has already been included
-            if chunk.parent_id and chunk.parent_id in seen_parent_ids:
+            parent_id = getattr(chunk, "parent_id", None)
+            if parent_id and parent_id in seen_parent_ids:
                 # Parent already in context; add this chunk_id to seen
                 seen_chunk_ids.add(chunk.chunk_id)
                 continue
 
             # Attempt to retrieve parent from SQL with mandatory scope filter
             parent_record: dict[str, Any] | None = None
-            if chunk.parent_id:
+            if parent_id:
                 try:
-                    parent_record = self.db.get_parent(chunk.parent_id, scope=scope)
+                    parent_record = self.db.get_parent(parent_id, scope=active_scope)
                 except Exception as exc:
                     logger.warning(
-                        f"Failed to fetch parent {chunk.parent_id} in scope {scope}: {exc}"
+                        f"Failed to fetch parent {parent_id} in scope {active_scope}: {exc}"
                     )
 
             if parent_record:
@@ -116,24 +120,29 @@ class ContextExpander:
                         break
 
                     passage = ExpandedContextPassage(
-                        passage_id=f"p_{chunk.parent_id}",
-                        doc_id=chunk.doc_id,
-                        title=chunk.title,
-                        breadcrumb=parent_record.get("breadcrumb") or chunk.breadcrumb,
-                        page=parent_record.get("page_start", chunk.page),
+                        passage_id=f"p_{parent_id}",
+                        doc_id=getattr(chunk, "doc_id", "doc"),
+                        title=getattr(chunk, "title", "Document"),
+                        breadcrumb=parent_record.get("breadcrumb")
+                        or getattr(chunk, "breadcrumb", "Overview"),
+                        page=parent_record.get("page_start", getattr(chunk, "page", 1)),
                         text=parent_text,
                         token_count=tokens_to_add,
                         is_parent_expanded=True,
                         source_chunk_ids=[chunk.chunk_id],
                     )
                     expanded_passages.append(passage)
-                    seen_parent_ids.add(chunk.parent_id)
+                    seen_parent_ids.add(parent_id)
                     seen_chunk_ids.add(chunk.chunk_id)
                     current_token_count += tokens_to_add
                     continue
 
             # Fallback to child chunk (or window) if parent is oversized or missing
-            child_text = chunk.display_text or chunk.embedding_text
+            child_text = (
+                getattr(chunk, "content", None)
+                or getattr(chunk, "display_text", None)
+                or getattr(chunk, "embedding_text", "")
+            )
             tokens_to_add = estimate_tokens(child_text)
 
             if current_token_count + tokens_to_add > active_budget:
@@ -142,10 +151,10 @@ class ContextExpander:
 
             passage = ExpandedContextPassage(
                 passage_id=f"c_{chunk.chunk_id}",
-                doc_id=chunk.doc_id,
-                title=chunk.title,
-                breadcrumb=chunk.breadcrumb,
-                page=chunk.page,
+                doc_id=getattr(chunk, "doc_id", "doc"),
+                title=getattr(chunk, "title", "Document"),
+                breadcrumb=getattr(chunk, "breadcrumb", "Overview"),
+                page=getattr(chunk, "page", getattr(chunk, "page_number", 1)),
                 text=child_text,
                 token_count=tokens_to_add,
                 is_parent_expanded=False,
@@ -160,3 +169,6 @@ class ContextExpander:
             total_tokens=current_token_count,
             budget_exhausted=budget_exhausted,
         )
+
+
+ParentContextExpander = ContextExpander

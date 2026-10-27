@@ -50,7 +50,15 @@ class LandingAINormalizer:
                 continue
 
             grounding = chunk.get("grounding", {}) or {}
-            page = grounding.get("page", 1)
+            raw_page = grounding.get("page")
+            if raw_page is None:
+                page = 1
+            else:
+                try:
+                    # Landing AI ADE grounding.page may be 0; clamp to at least 1 for Block schema (ge=1)
+                    page = max(1, int(raw_page))
+                except (ValueError, TypeError):
+                    page = 1
             raw_box = grounding.get("box")
 
             bbox: list[float] | None = None

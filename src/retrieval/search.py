@@ -64,12 +64,16 @@ class HybridSearchPipeline:
         store: QdrantVectorStore | None = None,
         reranker: CohereReranker | None = None,
         not_found_threshold: float = DEFAULT_NOT_FOUND_THRESHOLD,
+        dense_weight: float = 1.0,
+        sparse_weight: float = 1.0,
     ) -> None:
         self.embedder = embedder or CohereEmbedder()
         self.sparse_vectorizer = sparse_vectorizer or LocalSparseVectorizer()
         self.store = store or QdrantVectorStore()
         self.reranker = reranker or CohereReranker()
         self.not_found_threshold = not_found_threshold
+        self.dense_weight = dense_weight
+        self.sparse_weight = sparse_weight
 
     async def search(
         self,
@@ -101,12 +105,17 @@ class HybridSearchPipeline:
                 reason="empty_query",
             )
 
-        # 1. Compute dense query embedding (search_query input type)
-        dense_vectors = await self.embedder.embed([cleaned_query], input_type="search_query")
-        dense_query = dense_vectors[0] if dense_vectors else [0.0] * self.embedder.dimension
+        # 1. Compute dense query embedding if dense_weight > 0
+        if self.dense_weight > 0.0:
+            dense_vectors = await self.embedder.embed([cleaned_query], input_type="search_query")
+            dense_query = dense_vectors[0] if dense_vectors else [0.0] * self.embedder.dimension
+        else:
+            dense_query = [0.0] * self.embedder.dimension
 
-        # 2. Compute local sparse vector query ($0 compute)
-        sparse_query = self.sparse_vectorizer.vectorize(cleaned_query)
+        # 2. Compute local sparse vector query ($0 compute) if sparse_weight > 0
+        sparse_query = (
+            self.sparse_vectorizer.vectorize(cleaned_query) if self.sparse_weight > 0.0 else None
+        )
 
         # 3. Hybrid search in Qdrant with server-enforced scope filter
         raw_candidates = self.store.hybrid_search(
@@ -217,3 +226,6 @@ class HybridSearchPipeline:
             is_fallback_score=is_fallback,
             metadata=payload,
         )
+
+
+HybridSearcher = HybridSearchPipeline

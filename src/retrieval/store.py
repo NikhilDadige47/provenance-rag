@@ -57,7 +57,7 @@ class QdrantVectorStore(IVectorStore):
                 try:
                     api_key_str = config.qdrant_api_key.reveal() if config.qdrant_api_key else None
                     remote_client = QdrantClient(
-                        url=config.qdrant_url, api_key=api_key_str, timeout=2.0
+                        url=config.qdrant_url, api_key=api_key_str, timeout=30.0
                     )
                     # Verify connectivity
                     remote_client.get_collections()
@@ -170,7 +170,10 @@ class QdrantVectorStore(IVectorStore):
                 )
             )
 
-        self._client.upsert(collection_name=self.collection_name, points=points)
+        batch_size = 50
+        for i in range(0, len(points), batch_size):
+            batch = points[i : i + batch_size]
+            self._client.upsert(collection_name=self.collection_name, points=batch)
         return len(points)
 
     # Alias for API consistency

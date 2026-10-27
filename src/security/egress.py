@@ -23,6 +23,8 @@ ALLOWED_EGRESS_HOSTS: frozenset[str] = frozenset(
         "api.groq.com",
         "api.openai.com",
         "api.anthropic.com",
+        "api.mistral.ai",
+        "generativelanguage.googleapis.com",
         "cloud.langfuse.com",
         "us.cloud.langfuse.com",
     }

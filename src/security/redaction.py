@@ -60,6 +60,9 @@ def redact_text(text: str) -> str:
     return result
 
 
+redact_sensitive_str = redact_text
+
+
 def redact_dict(data: dict[str, Any]) -> dict[str, Any]:
     """Recursively scrub sensitive keys from dictionaries (e.g., config dumps, request bodies)."""
     clean: dict[str, Any] = {}

@@ -39,13 +39,18 @@ class CohereReranker(IReranker):
 
     def __init__(
         self,
-        api_key: Secret | None = None,
+        api_key: Secret | OwnerConfig | None = None,
         model_name: str | None = None,
         usage_callback: Callable[[int], None] | None = None,
         timeout: float = RERANK_TIMEOUT_SECONDS,
     ) -> None:
         cfg = OwnerConfig.from_env()
-        self._api_key = api_key if api_key is not None else cfg.cohere_api_key
+        if isinstance(api_key, OwnerConfig):
+            self._api_key = api_key.cohere_api_key
+        elif api_key is not None:
+            self._api_key = api_key
+        else:
+            self._api_key = cfg.cohere_api_key
         self._model_name = model_name or cfg.cohere_rerank_model or DEFAULT_RERANK_MODEL
         self._usage_callback = usage_callback
         self._timeout = timeout

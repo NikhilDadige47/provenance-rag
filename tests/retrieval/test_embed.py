@@ -54,3 +54,13 @@ async def test_embedder_circuit_breaker_tripping():
 
     with pytest.raises(ProviderUnavailableError):
         await embedder.embed(["Immediate fail text"])
+
+
+def test_embedder_accepts_owner_config():
+    """Verify embedder accepts OwnerConfig instance directly without AttributeError."""
+    from src.security.config import OwnerConfig
+
+    cfg = OwnerConfig(cohere_api_key="co-test-owner-key-12345", groq_api_key="test", qdrant_url=":memory:")
+    embedder = CohereEmbedder(cfg)
+    assert embedder._api_key is not None
+    assert embedder._api_key.reveal() == "co-test-owner-key-12345"

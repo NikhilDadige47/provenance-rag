@@ -502,37 +502,37 @@ Priority: **P0** · Complexity: **High**
 
 ## Checklist
 
-☐ **P7-T1 🔴 Golden set** (P0) · *Depends on: P3-T9*
-  ☐ [60m] 15 direct fact lookups over the demo corpus
-  ☐ [45m] 10 table/number questions
-  ☐ [45m] 10 multi-section questions
-  ☐ [45m] 10-15 not-in-corpus questions
-  ☐ [30m] Review and freeze v1
+☑ **P7-T1 🔴 Golden set** (P0) · *Depends on: P3-T9*
+  ☑ [60m] 15 direct fact lookups over the demo corpus
+  ☑ [45m] 10 table/number questions
+  ☑ [45m] 10 multi-section questions
+  ☑ [45m] 10-15 not-in-corpus questions
+  ☑ [30m] Review and freeze v1
 
-☐ **P7-T2 Eval script** (P0) · *Depends on: P7-T1, P4-T8*
-  ☐ [60m] Recall@5/10 and MRR
-  ☐ [60m] Faithfulness via LLM judge (your dev key) + hand-check of 10
-  ☐ [30m] Not-found accuracy, latency p50/p95, **Cohere embed/rerank usage and LLM tokens per query**
-  ☐ [30m] Output JSON + markdown to `eval/results/`
+☑ **P7-T2 Eval script** (P0) · *Depends on: P7-T1, P4-T8*
+  ☑ [60m] Recall@5/10 and MRR
+  ☑ [60m] Faithfulness via LLM judge (your dev key) + hand-check of 10
+  ☑ [30m] Not-found accuracy, latency p50/p95, **Cohere embed/rerank usage and LLM tokens per query**
+  ☑ [30m] Output JSON + markdown to `eval/results/`
 
-☐ **P7-T3 🔴 Ablation runs** (P0) · *Depends on: P7-T2*
-  ☐ [45m] Config flags for hybrid, parent-child, heading fusion, Cohere Rerank, window expansion
-  ☐ [60m] Run every ablation row; record results
-  ☐ [30m] Write 3-5 honest takeaways (include what did not help)
+☑ **P7-T3 🔴 Ablation runs** (P0) · *Depends on: P7-T2*
+  ☑ [45m] Config flags for hybrid, parent-child, heading fusion, Cohere Rerank, window expansion
+  ☑ [60m] Run every ablation row; record results
+  ☑ [30m] Write 3-5 honest takeaways (include what did not help)
 
-☐ **P7-T4 🔴 Tune thresholds and caps** (P0) · *Depends on: P7-T3*
-  ☐ [60m] Not-found threshold for Cohere Rerank scores from the score distributions
-  ☐ [45m] Chunk-size variants (2-3); keep best; log in `DECISIONS.md`
-  ☐ [45m] Convert measured cost per query into sensible per-session caps and the daily budget; update cap values
+☑ **P7-T4 🔴 Tune thresholds and caps** (P0) · *Depends on: P7-T3*
+  ☑ [60m] Not-found threshold for Cohere Rerank scores from the score distributions
+  ☑ [45m] Chunk-size variants (2-3); keep best; log in `DECISIONS.md`
+  ☑ [45m] Convert measured cost per query into sensible per-session caps and the daily budget; update cap values
 
-☐ **P7-T5 Tier checks** (P1) · *Depends on: P6-T8, P7-T4*
-  ☐ [45m] `eval/tier_checks.py` runs A, B (local parser) and C (own LLM key) flows and verifies the correct party's key is used per call
+☑ **P7-T5 Tier checks** (P1) · *Depends on: P6-T8, P7-T4*
+  ☑ [45m] `eval/tier_checks.py` runs A, B (local parser) and C (own LLM key) flows and verifies the correct party's key is used per call
 
-☐ **P7-T6 🔴 Privacy-safe tracing** (P0) · *Depends on: P6-T7*
-  ☐ [45m] Langfuse spans: rewrite, embed, search, rerank, expand, LLM, citation check
-  ☐ [30m] **Full content only for dev/eval and demo-corpus queries; metadata-only for visitor uploads**
-  ☐ [30m] Verify no key or visitor text appears in uploaded-scope spans
-  ☐ [15m] Screenshot a representative dev trace for the README
+☑ **P7-T6 🔴 Privacy-safe tracing** (P0) · *Depends on: P6-T7*
+  ☑ [45m] Langfuse spans: rewrite, embed, search, rerank, expand, LLM, citation check
+  ☑ [30m] **Full content only for dev/eval and demo-corpus queries; metadata-only for visitor uploads**
+  ☑ [30m] Verify no key or visitor text appears in uploaded-scope spans
+  ☑ [15m] Screenshot a representative dev trace for the README
 
 ☐ **P7-T7 Optional parser comparison** (P2) · *Depends on: P2-T3, P2-T4*
   ☐ [60m] Ingest 10-20 PDFs per parser (separate runs)
@@ -541,7 +541,7 @@ Priority: **P0** · Complexity: **High**
 Priority: **P0** · Complexity: **Medium**
 
 **Milestone:**
-✅ Real metrics, tuned thresholds and caps, ablation table, clean trace screenshot.
+✅ Real metrics, tuned thresholds and caps, ablation table, clean trace screenshot. (COMPLETED)
 
 ---
 
@@ -556,47 +556,47 @@ Priority: **P0** · Complexity: **Medium**
 
 ## Checklist
 
-☐ **P8-T1 Scaffold** (P0) · *Depends on: P5-T5*
-  ☐ [45m] Pick Next.js or Streamlit/Gradio; scaffold
-  ☐ [30m] API client with session handling and optional LLM-key header
+☑ **P8-T1 Scaffold** (P0) · *Depends on: P5-T5*
+  ☑ [45m] Pick Next.js or Streamlit/Gradio; scaffold
+  ☑ [30m] API client with session handling and optional LLM-key header
 
-☐ **P8-T2 🔴 Tier A experience** (P0) · *Depends on: P8-T1, P5-T4*
-  ☐ [45m] Landing with a prominent **"Try the demo (no keys needed)"** path
-  ☐ [45m] Chat UI: streamed answer, collapsible source cards (breadcrumb + page + snippet)
-  ☐ [30m] Example-question chips from `/examples`
+☑ **P8-T2 🔴 Tier A experience** (P0) · *Depends on: P8-T1, P5-T4*
+  ☑ [45m] Landing with a prominent **"Try the demo (no keys needed)"** path
+  ☑ [45m] Chat UI: streamed answer, collapsible source cards (breadcrumb + page + snippet)
+  ☑ [30m] Example-question chips from `/examples`
 
-☐ **P8-T3 🔴 Upload form and key handling** (P0) · *Depends on: P8-T1, P6-T2*
-  ☐ [45m] File picker; parser dropdown including **"Free local parser (no key)"**
-  ☐ [45m] Parser key field (password type), "Test key" button; key held in frontend state only; optional "remember in this tab" **off by default**
-  ☐ [30m] Privacy note beside each key field and a "use a limited, revocable key" hint
-  ☐ [30m] Estimate + confirmation dialog (pages, chunks, remaining allowance)
-  ☐ [30m] Terms checkbox (right to upload)
+☑ **P8-T3 🔴 Upload form and key handling** (P0) · *Depends on: P8-T1, P6-T2*
+  ☑ [45m] File picker; parser dropdown including **"Free local parser (no key)"**
+  ☑ [45m] Parser key field (password type), "Test key" button; key held in frontend state only; optional "remember in this tab" **off by default**
+  ☑ [30m] Privacy note beside each key field and a "use a limited, revocable key" hint
+  ☑ [30m] Estimate + confirmation dialog (pages, chunks, remaining allowance)
+  ☑ [30m] Terms checkbox (right to upload)
 
-☐ **P8-T4 Optional LLM key (Tier C)** (P0) · *Depends on: P8-T2, P5-T5*
-  ☐ [45m] "Use my own LLM key" panel: provider dropdown, key, model; test button
-  ☐ [30m] Show raised question limit when a key is active; handle key errors gracefully (fall back to owner default within caps)
+☑ **P8-T4 Optional LLM key (Tier C)** (P0) · *Depends on: P8-T2, P5-T5*
+  ☑ [45m] "Use my own LLM key" panel: provider dropdown, key, model; test button
+  ☑ [30m] Show raised question limit when a key is active; handle key errors gracefully (fall back to owner default within caps)
 
-☐ **P8-T5 Job status and warnings** (P0) · *Depends on: P8-T3*
-  ☐ [45m] Poll `/jobs/{id}` with stage progress
-  ☐ [30m] Show failures and the "Parse quality warning" with "try a different parser"
+☑ **P8-T5 Job status and warnings** (P0) · *Depends on: P8-T3*
+  ☑ [45m] Poll `/jobs/{id}` with stage progress
+  ☑ [30m] Show failures and the "Parse quality warning" with "try a different parser"
 
-☐ **P8-T6 Usage meter and capacity states** (P0) · *Depends on: P8-T2*
-  ☐ [45m] Meter from `/usage` (documents, chunks, questions remaining)
-  ☐ [30m] States: cap reached, demo at capacity, not found, reranker unavailable (hybrid order), generation unavailable
+☑ **P8-T6 Usage meter and capacity states** (P0) · *Depends on: P8-T2*
+  ☑ [45m] Meter from `/usage` (documents, chunks, questions remaining)
+  ☑ [30m] States: cap reached, demo at capacity, not found, reranker unavailable (hybrid order), generation unavailable
 
-☐ **P8-T7 Session controls and polish** (P1) · *Depends on: P8-T5, P8-T6*
-  ☐ [30m] "Delete my data now" button
-  ☐ [30m] Cold-start "waking up" message
-  ☐ [45m] Mobile layout check on a real phone
-  ☐ [30m] Basic accessibility pass
+☑ **P8-T7 Session controls and polish** (P1) · *Depends on: P8-T5, P8-T6*
+  ☑ [30m] "Delete my data now" button
+  ☑ [30m] Cold-start "waking up" message
+  ☑ [45m] Mobile layout check on a real phone
+  ☑ [30m] Basic accessibility pass
 
-☐ **P8-T8 Optional PDF viewer with bbox highlight** (P2) · *Depends on: P8-T2*
-  ☐ [60m] Open source page; highlight bbox for parsers providing coordinates
+☑ **P8-T8 Optional PDF viewer with bbox highlight** (P2) · *Depends on: P8-T2*
+  ☑ [60m] Open source page; highlight bbox for parsers providing coordinates
 
 Priority: **P0** · Complexity: **Medium**
 
 **Milestone:**
-✅ A new user can try the demo in seconds, and an engineer can upload a document and (optionally) use their own keys, entirely from the browser.
+✅ A new user can try the demo in seconds, and an engineer can upload a document and (optionally) use their own keys, entirely from the browser. (COMPLETED)
 
 ---
 

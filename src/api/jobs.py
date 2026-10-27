@@ -56,7 +56,7 @@ class JobRunner:
         self.cfg = cfg
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self.chunker = HybridChunker(ChunkingConfig())
-        self.embedder = CohereEmbedder(cfg)
+        self.embedder = CohereEmbedder(cfg.cohere_api_key)
         self.sparse_vectorizer = LocalSparseVectorizer()
         self.local_parser = LocalPyMuPDFParser()
 

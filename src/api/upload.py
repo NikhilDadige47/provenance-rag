@@ -115,16 +115,23 @@ class DocumentMetadataResponse(BaseModel):
         "via PyMuPDF ($0), and shows remaining session quota before any upload occurs."
     ),
 )
+@router.post(
+    "/upload/estimate",
+    response_model=UploadEstimateResponse,
+    summary="Estimate chunk count and validate PDF (alias for /upload/validate)",
+)
 async def validate_and_estimate_upload(
     request: Request,
     file: UploadFile = File(..., description="PDF document to inspect"),
     parser: str = Form("local_pymupdf", description="Target parser name"),
+    parser_key: str | None = Form(None, description="Optional parser API key"),
     session: SessionState = Depends(get_current_session),
     x_parser_key: str | None = Header(None, alias="X-Parser-Key"),
 ) -> UploadEstimateResponse:
     """Validate PDF integrity and return cost/quota preview."""
     cfg: OwnerConfig = request.app.state.cfg
     db: DatabaseManager = request.app.state.db
+    effective_parser_key = x_parser_key or parser_key
 
     # Read uploaded file bytes in memory
     file_bytes = await file.read()
@@ -147,8 +154,10 @@ async def validate_and_estimate_upload(
     )
 
     # If visitor provided a parser key, pre-flight test it
-    if x_parser_key and estimate.requires_visitor_key:
-        test_res = await verify_provider_connection(provider=parser, key=Secret(x_parser_key))
+    if effective_parser_key and estimate.requires_visitor_key:
+        test_res = await verify_provider_connection(
+            provider=parser, key=Secret(effective_parser_key)
+        )
         if not test_res.ok:
             estimate.can_proceed = False
             estimate.message = f"Parser API key verification failed: {test_res.hint}"
@@ -170,6 +179,7 @@ async def upload_document(
     request: Request,
     file: UploadFile = File(..., description="PDF file to ingest"),
     parser: str = Form("local_pymupdf", description="local_pymupdf, llamaparse, or landingai"),
+    parser_key: str | None = Form(None, description="Optional parser API key from form"),
     allow_fallback: bool = Form(
         True, description="Automatically re-parse locally if cloud parser fails"
     ),
@@ -183,6 +193,8 @@ async def upload_document(
     if not store:
         store = QdrantVectorStore(cfg=cfg)
         request.app.state.store = store
+
+    effective_parser_key = x_parser_key or parser_key
 
     # 1. Kill switch check
     check_kill_switch_uploads(cfg)
@@ -205,7 +217,7 @@ async def upload_document(
 
     # 5. Check if parser requires a key that was not provided
     parser_clean = parser.strip().lower()
-    if parser_clean in ("llamaparse", "landingai", "unstructured") and not x_parser_key:
+    if parser_clean in ("llamaparse", "landingai", "unstructured") and not effective_parser_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -237,7 +249,7 @@ async def upload_document(
             filename=validation.filename,
             file_bytes=file_bytes,
             parser_name=parser_clean,
-            parser_key=x_parser_key,
+            parser_key=effective_parser_key,
             allow_fallback=allow_fallback,
         )
     )
@@ -388,3 +400,45 @@ async def delete_active_session(
 
     result = delete_session(session_id=session.session_id, db=db, store=store)
     return result
+
+
+class SessionPurgePayload(BaseModel):
+    session_id: str | None = None
+
+
+@router.post(
+    "/session/purge",
+    summary="Purge session data on browser close or unload",
+    description="Immediate hard-wipe of all vectors, parent chunks, documents, jobs, and metadata when browser tab closes or reloads.",
+)
+async def purge_session_on_unload(
+    request: Request,
+    payload: SessionPurgePayload | None = None,
+) -> dict[str, Any]:
+    """Beacon/unload endpoint to hard-wipe session vectors and metadata."""
+    auth = request.headers.get("Authorization", "")
+    token: str | None = None
+    if auth.startswith("Bearer "):
+        token = auth[7:].strip()
+    elif payload and payload.session_id:
+        token = payload.session_id.strip()
+
+    # Fallback to body raw json if sent via navigator.sendBeacon
+    if not token:
+        try:
+            body = await request.body()
+            if body:
+                data = json.loads(body.decode("utf-8"))
+                token = data.get("session_id")
+        except Exception:
+            pass
+
+    if not token:
+        return {"status": "noop", "message": "No session token supplied."}
+
+    db: DatabaseManager = request.app.state.db
+    store: QdrantVectorStore = getattr(request.app.state, "store", None)
+    if not store:
+        store = QdrantVectorStore(cfg=request.app.state.cfg)
+
+    return delete_session(session_id=token, db=db, store=store)

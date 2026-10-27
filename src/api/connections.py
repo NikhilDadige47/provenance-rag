@@ -22,7 +22,11 @@ PROVIDER_PROBE_URLS = {
     "openai": "https://api.openai.com/v1/models",
     "groq": "https://api.groq.com/openai/v1/models",
     "anthropic": "https://api.anthropic.com/v1/models",
+    "mistral": "https://api.mistral.ai/v1/models",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/models",
     "llamaparse": "https://api.cloud.llamaindex.ai/api/v1/parsing/supported-file-extensions",
+    "landingai": "https://api.va.landing.ai/v1/tools/agentic-document-analysis",
+    "unstructured": "https://api.unstructured.io",
 }
 
 
@@ -38,6 +42,7 @@ class ConnectionTestResponse(BaseModel):
     provider: str
     error: str | None = None
     hint: str | None = None
+    models: list[str] | None = None
 
 
 async def verify_provider_connection(
@@ -63,13 +68,13 @@ async def verify_provider_connection(
     probe_url = PROVIDER_PROBE_URLS[provider_clean]
     headers: dict[str, str] = {}
 
-    if provider_clean == "cohere" or provider_clean in {"openai", "groq"}:
+    if provider_clean == "gemini":
+        probe_url = f"{probe_url}?key={key.reveal()}"
+    elif provider_clean in {"cohere", "openai", "groq", "mistral", "llamaparse", "landingai", "unstructured"}:
         headers["Authorization"] = f"Bearer {key.reveal()}"
     elif provider_clean == "anthropic":
         headers["x-api-key"] = key.reveal()
         headers["anthropic-version"] = "2023-06-01"
-    elif provider_clean == "llamaparse":
-        headers["Authorization"] = f"Bearer {key.reveal()}"
 
     close_client = False
     if client is None:
@@ -80,6 +85,24 @@ async def verify_provider_connection(
         response = await client.get(probe_url, headers=headers)
 
         if response.status_code in {200, 201}:
+            models: list[str] | None = None
+            try:
+                data = response.json()
+                if isinstance(data, dict):
+                    if "data" in data and isinstance(data["data"], list):
+                        models = [m["id"] for m in data["data"] if isinstance(m, dict) and "id" in m]
+                    elif "models" in data and isinstance(data["models"], list):
+                        models = [
+                            m.get("id") or m.get("name", "").replace("models/", "")
+                            for m in data["models"]
+                            if isinstance(m, dict)
+                        ]
+            except Exception:
+                pass
+            return ConnectionTestResponse(ok=True, provider=provider_clean, models=models)
+
+        # For certain APIs that require POST or specific endpoints, 404/405 without 401/403 can still verify auth
+        if provider_clean in {"landingai", "unstructured"} and response.status_code not in {401, 403}:
             return ConnectionTestResponse(ok=True, provider=provider_clean)
 
         if response.status_code in {401, 403}:
