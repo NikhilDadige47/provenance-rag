@@ -12,6 +12,7 @@ Implements roadmap P6-T3, P6-T4, and P6-T5:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import tempfile
@@ -26,6 +27,8 @@ from src.ingest.chunking.models import ChunkingConfig
 from src.ingest.parsers.local_pymupdf import LocalPyMuPDFParser, extract_raw_reference_text
 from src.ingest.parsers.quality_gate import QualityGateResult, evaluate_quality_gate
 from src.ingest.parsers.registry import default_parser_registry
+from src.ingest.parsers.router import FallbackParserRouter, ParseExecutionResult, RequestContext
+from src.ingest.parsers.selection import canonical_parser_label
 from src.ingest.parsers.structured_doc import StructuredDoc
 from src.retrieval.embed import CohereEmbedder
 from src.retrieval.sparse import LocalSparseVectorizer
@@ -59,6 +62,7 @@ class JobRunner:
         self.embedder = CohereEmbedder(cfg.cohere_api_key)
         self.sparse_vectorizer = LocalSparseVectorizer()
         self.local_parser = LocalPyMuPDFParser()
+        self.router = FallbackParserRouter(db=self.db, cfg=self.cfg)
 
     async def run_ingestion_pipeline(
         self,
@@ -69,6 +73,7 @@ class JobRunner:
         parser_name: str,
         parser_key: str | None = None,
         allow_fallback: bool = True,
+        client_ip: str = "unknown",
     ) -> None:
         """Run complete ingestion pipeline in background under concurrency semaphore."""
         async with self._semaphore:
@@ -80,6 +85,7 @@ class JobRunner:
                 parser_name=parser_name,
                 parser_key=parser_key,
                 allow_fallback=allow_fallback,
+                client_ip=client_ip,
             )
 
     async def _execute_pipeline(
@@ -91,6 +97,7 @@ class JobRunner:
         parser_name: str,
         parser_key: str | None = None,
         allow_fallback: bool = True,
+        client_ip: str = "unknown",
     ) -> None:
         """Core execution logic with ephemeral secret shredding in finally block."""
         doc_id = "doc_" + uuid.uuid4().hex[:12]
@@ -107,14 +114,13 @@ class JobRunner:
                 temp_pdf_path = Path(tmp.name)
 
             # Compute content hash for cache and document metadata
-            import hashlib
-
             content_hash = hashlib.sha256(file_bytes).hexdigest()
 
             # -----------------------------------------------------------------
             # Step 1: Check Session-Scoped Parse Cache (P6-T5)
             # -----------------------------------------------------------------
             structured_doc: StructuredDoc | None = None
+            parser_used = parser_name
             cached_blob = self.db.get_parse_cache(
                 session_id=session_id,
                 content_hash=content_hash,
@@ -125,21 +131,33 @@ class JobRunner:
                 try:
                     cached_dict = json.loads(cached_blob)
                     structured_doc = StructuredDoc(**cached_dict)
+                    parser_used = canonical_parser_label(structured_doc.parser_used or parser_name)
                     logger.info(f"Parse cache hit [{job_id}] for hash={content_hash[:8]}")
                 except Exception as exc:
                     logger.warning(f"Failed to deserialize cached parse blob: {exc}")
                     structured_doc = None
 
             # -----------------------------------------------------------------
-            # Step 2: Parse Document (Local or Visitor Cloud Parser)
+            # Step 2: Parse Document (owner auto waterfall or explicit parser)
             # -----------------------------------------------------------------
             if not structured_doc:
-                structured_doc = await self._parse_with_fallback(
+                parse_result = await self._parse_with_fallback(
                     pdf_path=temp_pdf_path,
                     parser_name=parser_name,
                     parser_secret=parser_secret,
                     allow_fallback=allow_fallback,
                     job_id=job_id,
+                    pdf_bytes=file_bytes,
+                    session_id=session_id,
+                    client_ip=client_ip,
+                )
+                structured_doc = parse_result.structured_doc
+                parser_used = canonical_parser_label(
+                    parse_result.parser_label or structured_doc.parser_used or parser_name
+                )
+                logger.info(
+                    f"Parse complete [{job_id}]: parser={parser_used} "
+                    f"trail={parse_result.fallback_trail} charged={parse_result.credits_charged}"
                 )
 
                 # Store in session-scoped parse cache (never includes keys)
@@ -239,7 +257,7 @@ class JobRunner:
             # Upsert dual vectors into Qdrant strictly scoped to session_id
             doc_metadata = {
                 "title": structured_doc.title or filename,
-                "parser_used": parser_name,
+                "parser_used": parser_used,
                 "parser_version": "1.0",
                 "page_count": structured_doc.page_count,
             }
@@ -258,7 +276,7 @@ class JobRunner:
                 title=structured_doc.title or filename,
                 content_hash=content_hash,
                 page_count=structured_doc.page_count,
-                parser_used=parser_name,
+                parser_used=parser_used,
                 parser_version="1.0",
                 quality_flags=quality_flags_str,
             )
@@ -337,22 +355,51 @@ class JobRunner:
         parser_secret: Secret | None,
         allow_fallback: bool,
         job_id: str,
-    ) -> StructuredDoc:
-        """Parse with selected parser, gracefully falling back to PyMuPDF on failure."""
+        pdf_bytes: bytes | None = None,
+        session_id: str = "default",
+        client_ip: str = "unknown",
+    ) -> ParseExecutionResult:
+        """Parse via the owner waterfall (auto) or an explicit parser, with local floor."""
+        if pdf_bytes is not None and (allow_fallback or parser_name == "auto"):
+            # auto is always owner-paid: never attach a visitor parser key to every provider.
+            owner_waterfall = parser_name == "auto"
+            visitor_key = None if owner_waterfall else parser_secret
+            ctx = RequestContext(
+                session_id=session_id,
+                client_ip=client_ip or "unknown",
+                sha=hashlib.sha256(pdf_bytes).hexdigest(),
+                byok=bool(visitor_key and visitor_key.reveal()),
+                parser_secret=visitor_key,
+            )
+            return await self.router.parse_with_fallback(
+                pdf_path=pdf_path,
+                pdf_bytes=pdf_bytes,
+                ctx=ctx,
+                preferred_parser=parser_name,
+            )
+
         parser = default_parser_registry.get(parser_name)
 
         try:
             doc = await parser.parse(pdf_path, api_key=parser_secret)
-            # If cloud parser produced virtually no text, consider local fallback
             if allow_fallback and parser_name != "local_pymupdf" and len(doc.blocks) == 0:
                 logger.warning(
                     f"Cloud parser '{parser_name}' produced 0 blocks. Falling back to local PyMuPDF [{job_id}]."
                 )
-                return await self.local_parser.parse(pdf_path)
-            return doc
+                local_doc = await self.local_parser.parse(pdf_path)
+                return ParseExecutionResult(
+                    structured_doc=local_doc,
+                    parser_label="local_pymupdf",
+                    degraded=True,
+                    fallback_trail=[(parser_name, "empty"), ("local_pymupdf", "ok")],
+                )
+            return ParseExecutionResult(
+                structured_doc=doc,
+                parser_label=parser_name,
+                degraded=parser_name == "local_pymupdf",
+            )
 
         except (InvalidKeyError, QuotaExhaustedError) as exc:
-            # Visitor key errors must fail fast without retry
             raise exc
 
         except Exception as exc:
@@ -360,7 +407,13 @@ class JobRunner:
                 logger.warning(
                     f"Parser '{parser_name}' failed with {exc}. Falling back to local PyMuPDF [{job_id}]."
                 )
-                return await self.local_parser.parse(pdf_path)
+                local_doc = await self.local_parser.parse(pdf_path)
+                return ParseExecutionResult(
+                    structured_doc=local_doc,
+                    parser_label="local_pymupdf",
+                    degraded=True,
+                    fallback_trail=[(parser_name, type(exc).__name__), ("local_pymupdf", "ok")],
+                )
             raise exc
 
     def _format_error(self, exc: Exception) -> str:

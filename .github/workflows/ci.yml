@@ -30,3 +30,7 @@ jobs:
       - name: Run Pytest
         run: |
           pytest -ra
+
+      - name: Enforce Retrieval Accuracy Regression Gate
+        run: |
+          pytest tests/eval/test_eval.py tests/eval/test_ablation.py -k "regression_gate or offline_ablation" --verbose

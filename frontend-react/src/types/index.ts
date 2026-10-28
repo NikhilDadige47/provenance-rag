@@ -43,6 +43,8 @@ export interface UsageInfo {
   rerank_calls_max: number;
   at_capacity: boolean;
   session_expires_at: string;
+  owner_llm_provider?: string;
+  owner_llm_model?: string;
 }
 
 export interface ExampleQuestion {

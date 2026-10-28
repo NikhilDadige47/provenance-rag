@@ -59,6 +59,8 @@ def owner_cfg() -> OwnerConfig:
         cohere_api_key="test_cohere",
         groq_api_key="test_groq",
         qdrant_url=":memory:",
+        landingai_api_key=None,
+        llamaparse_api_key=None,
     )
 
 
@@ -238,6 +240,11 @@ def test_build_upload_estimate(test_db: DatabaseManager, owner_cfg: OwnerConfig)
     assert est_local.page_count == 3
     assert est_local.can_proceed is True
 
-    # LlamaParse: requires_key is True
+    # LlamaParse: requires_key is True when the owner has no LlamaParse key
     est_lp = build_upload_estimate(val, "llamaparse", s_row, owner_cfg)
     assert est_lp.requires_visitor_key is True
+
+    # auto: owner waterfall, never requires a visitor parser key
+    est_auto = build_upload_estimate(val, "auto", s_row, owner_cfg)
+    assert est_auto.requires_visitor_key is False
+    assert est_auto.parser_name == "auto"

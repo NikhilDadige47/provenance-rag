@@ -78,6 +78,24 @@ PROVIDER_CATALOG: dict[str, ProviderEntry] = {
         notes="Support for Claude 3.5 Sonnet with visitor BYOK key.",
         recommended_models=["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
     ),
+    "gemini": ProviderEntry(
+        name="gemini",
+        category="llm",
+        display_name="Google Gemini",
+        requires_key=True,
+        docs_url="https://ai.google.dev/gemini-api/docs",
+        notes="Visitor BYOK for Gemini Flash/Pro. Key is request-scoped only.",
+        recommended_models=["gemini-1.5-flash-latest", "gemini-1.5-pro-latest"],
+    ),
+    "mistral": ProviderEntry(
+        name="mistral",
+        category="llm",
+        display_name="Mistral AI",
+        requires_key=True,
+        docs_url="https://docs.mistral.ai",
+        notes="Visitor BYOK for Mistral chat models. Key is request-scoped only.",
+        recommended_models=["mistral-small-latest", "mistral-large-latest"],
+    ),
 }
 
 

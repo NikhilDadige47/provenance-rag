@@ -218,8 +218,7 @@ class HybridChunker(IChunker):
                 content_hash = hashlib.sha256(text_piece.encode("utf-8")).hexdigest()[:16]
                 chunk_id = self._generate_child_id(doc_id, parent_id, len(children), content_hash)
 
-                # Heading fusion: prepend breadcrumb to embedding_text
-                embedding_text = f"[{breadcrumb}]\n\n{text_piece}"
+                embedding_text = self._embedding_text(breadcrumb, text_piece, cfg)
 
                 child = ChildChunk(
                     chunk_id=chunk_id,
@@ -252,7 +251,7 @@ class HybridChunker(IChunker):
                     chunk_id = self._generate_child_id(
                         doc_id, parent_id, len(children), content_hash
                     )
-                    embedding_text = f"[{breadcrumb}]\n\n{table_piece}"
+                    embedding_text = self._embedding_text(breadcrumb, table_piece, cfg)
 
                     children.append(
                         ChildChunk(
@@ -274,7 +273,7 @@ class HybridChunker(IChunker):
                 flush_paragraph_buffer()
                 content_hash = hashlib.sha256(block.text.encode("utf-8")).hexdigest()[:16]
                 chunk_id = self._generate_child_id(doc_id, parent_id, len(children), content_hash)
-                embedding_text = f"[{breadcrumb}]\n\n{block.text}"
+                embedding_text = self._embedding_text(breadcrumb, block.text, cfg)
 
                 chunk_type_val: Literal["code", "list"] = (
                     "code" if block.type == BlockType.CODE else "list"
@@ -301,6 +300,13 @@ class HybridChunker(IChunker):
 
         flush_paragraph_buffer()
         return children
+
+    @staticmethod
+    def _embedding_text(breadcrumb: str, text: str, cfg: ChunkingConfig) -> str:
+        """Optionally fuse heading breadcrumbs into the embedded representation."""
+        if cfg.use_heading_fusion and breadcrumb.strip():
+            return f"[{breadcrumb}]\n\n{text}"
+        return text
 
     def _generate_parent_id(self, doc_id: str, section_idx: int, breadcrumb: str) -> str:
         """Deterministic parent ID based on doc and section index."""

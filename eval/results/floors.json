@@ -1,0 +1,7 @@
+{
+  "min_recall_at_5": 85.0,
+  "min_recall_at_10": 90.0,
+  "min_mrr": 0.80,
+  "min_not_found_accuracy": 95.0,
+  "require_rerank_beats_simple": true
+}

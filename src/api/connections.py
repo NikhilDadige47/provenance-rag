@@ -53,8 +53,8 @@ async def verify_provider_connection(
     """Validate a provider key with the cheapest non-credit-consuming call."""
     provider_clean = provider.strip().lower()
 
-    # Free local parsers don't need a key
-    if provider_clean in {"local_pymupdf", "local"}:
+    # Free local parsers and owner-paid auto waterfall don't need a visitor key
+    if provider_clean in {"local_pymupdf", "local", "auto"}:
         return ConnectionTestResponse(ok=True, provider=provider_clean)
 
     if provider_clean not in PROVIDER_PROBE_URLS:

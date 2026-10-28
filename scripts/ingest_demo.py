@@ -1,9 +1,11 @@
 """Offline demo corpus ingestion script for Tier A (Zero-Key Demo).
 
-Ingests public domain PDF documents from demo_corpus/ into SQLite and Qdrant
-under scope = 'demo' using the owner's pinned embedding model according to spec P3-T9.
+Parser is selected by DEMO_PARSER (or --parser): local_pymupdf | llamaparse |
+landingai. Visitor uploads are unchanged. Chunks are Cohere-embedded once into
+Qdrant under scope='demo' for the live demo UI and live golden-set evaluation.
 """
 
+import argparse
 import asyncio
 import logging
 import sys
@@ -16,17 +18,35 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src.ingest.chunking.hybrid_chunker import HybridChunker
+from src.ingest.demo_parser import (
+    DEFAULT_DEMO_PARSER,
+    DEMO_PARSER_CHOICES,
+    DemoParserError,
+    resolve_demo_parser,
+)
 from src.ingest.parsers.local_pymupdf import LocalPyMuPDFParser, extract_raw_reference_text
 from src.ingest.parsers.quality_gate import evaluate_parse_quality
+from src.interfaces import IParser
 from src.retrieval.embed import CohereEmbedder
 from src.retrieval.sparse import LocalSparseVectorizer
 from src.retrieval.store import QdrantVectorStore
+from src.security.config import OwnerConfig
+from src.security.secret import Secret
 from src.storage.db import DatabaseManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("demo_ingest")
 
 DEMO_CORPUS_DIR = Path("demo_corpus")
+DEMO_PARSER_NAME = DEFAULT_DEMO_PARSER
+
+
+def list_demo_pdfs(corpus_dir: Path = DEMO_CORPUS_DIR) -> list[Path]:
+    """Prefer Apple 10-Ks when present; otherwise ingest every PDF in the folder."""
+    apple = sorted(corpus_dir.glob("Apple-Annual-Report-*.pdf"))
+    if apple:
+        return apple
+    return sorted(corpus_dir.glob("*.pdf"))
 
 
 async def ingest_demo_document(
@@ -36,13 +56,16 @@ async def ingest_demo_document(
     embedder: CohereEmbedder | None,
     store: QdrantVectorStore,
     db: DatabaseManager,
+    require_embeddings: bool = False,
+    parser: IParser | None = None,
+    parser_key: Secret | None = None,
 ) -> int:
     """Ingest a single demo document into scope='demo'."""
     logger.info(f"Processing demo document: {pdf_path.name}")
 
-    # 1. Parse locally using PyMuPDF (no key required)
-    parser = LocalPyMuPDFParser()
-    doc = await parser.parse(pdf_path)
+    active_parser = parser or LocalPyMuPDFParser()
+    logger.info("Parsing %s with %s", pdf_path.name, active_parser.name)
+    doc = await active_parser.parse(pdf_path, api_key=parser_key)
 
     # 2. Quality Gate check
     ref_text = extract_raw_reference_text(pdf_path)
@@ -73,7 +96,7 @@ async def ingest_demo_document(
                 doc.title,
                 chunk_res.children[0].content_hash if chunk_res.children else "demo_hash",
                 doc.page_count,
-                "local_pymupdf",
+                active_parser.name,
                 doc.parser_version,
                 chunk_res.chunking_version,
                 "emb-v1",
@@ -91,6 +114,8 @@ async def ingest_demo_document(
         try:
             dense_vectors = await embedder.embed(texts_to_embed, input_type="search_document")
         except Exception as exc:
+            if require_embeddings:
+                raise
             logger.warning(
                 f"Cohere embedding failed ({exc}). Using fallback vectors for local demo."
             )
@@ -104,31 +129,80 @@ async def ingest_demo_document(
         dense_vectors=dense_vectors,
         sparse_vectors=sparse_vectors,
         scope="demo",
-        doc_metadata={"title": doc.title, "parser_used": "local_pymupdf"},
+        doc_metadata={"title": doc.title, "parser_used": active_parser.name},
     )
     logger.info(f"Successfully upserted {count} chunks into Qdrant (scope='demo').")
     return count
 
 
 async def main() -> None:
-    """Run ingestion over all demo PDFs."""
+    """Run ingestion over demo PDFs into the permanent Qdrant demo scope."""
+    cli = argparse.ArgumentParser(
+        description="Ingest demo PDFs into Qdrant scope=demo. Parser from DEMO_PARSER or --parser."
+    )
+    cli.add_argument(
+        "--parser",
+        choices=DEMO_PARSER_CHOICES,
+        default=None,
+        help="Override DEMO_PARSER for this run (local_pymupdf | llamaparse | landingai).",
+    )
+    cli.add_argument(
+        "--require-embeddings",
+        action="store_true",
+        help="Fail instead of writing dummy vectors when Cohere is unavailable.",
+    )
+    cli.add_argument(
+        "--embed-inputs-per-minute",
+        type=int,
+        default=1800,
+        help="Cohere Embed budget (official cap is 2000 inputs/min). Default 1800 leaves headroom.",
+    )
+    args = cli.parse_args()
+
+    cfg = OwnerConfig.from_env()
+    try:
+        demo_parser, demo_key = resolve_demo_parser(name=args.parser, cfg=cfg)
+    except DemoParserError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from exc
+
     chunker = HybridChunker()
     sparse_vectorizer = LocalSparseVectorizer()
     store = QdrantVectorStore()
     db = DatabaseManager()
 
-    # Optional embedder (falls back gracefully if owner key is not set)
     try:
-        embedder = CohereEmbedder()
+        embedder = CohereEmbedder(
+            max_inputs_per_minute=args.embed_inputs_per_minute,
+            min_request_gap_seconds=0.5,
+            rate_limit_wait_seconds=30.0,
+            max_retries=8,
+        )
+        logger.info(
+            "Cohere Embed limit is 2,000 inputs/min (trial and production). "
+            "Pacing to %s inputs/min; 30s wait on 429. Trial keys also cap at "
+            "1,000 API calls/month.",
+            args.embed_inputs_per_minute,
+        )
     except Exception:
         embedder = None
 
-    pdf_files = list(DEMO_CORPUS_DIR.glob("*.pdf"))
+    if args.require_embeddings and embedder is None:
+        logger.error("Cohere Embed is required (--require-embeddings) but is not configured.")
+        raise SystemExit(1)
+
+    pdf_files = list_demo_pdfs()
     if not pdf_files:
         logger.info(
             f"No PDF files found in {DEMO_CORPUS_DIR}. Place demo PDFs here for offline ingestion."
         )
         return
+
+    logger.info(
+        "Ingesting %s PDF(s) with parser=%s into Qdrant scope=demo.",
+        len(pdf_files),
+        demo_parser.name,
+    )
 
     total = 0
     for pdf in pdf_files:
@@ -139,6 +213,9 @@ async def main() -> None:
             embedder=embedder,
             store=store,
             db=db,
+            require_embeddings=args.require_embeddings,
+            parser=demo_parser,
+            parser_key=demo_key,
         )
 
     logger.info(

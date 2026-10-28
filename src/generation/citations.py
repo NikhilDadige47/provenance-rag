@@ -12,7 +12,24 @@ from dataclasses import dataclass
 
 from src.retrieval.expansion import ExpandedContextPassage
 
-CITATION_PATTERN = re.compile(r"(?:\[|【)(\d+(?:\s*,\s*\d+)*)(?:\]|】)")
+# [1], [1, 2], 【1】, and provider footnotes like 【1†L1-L4】
+_BRACKET_RE = re.compile(r"(?:\[|【)([^\]】]{1,80})(?:\]|】)")
+_LEADING_INT_RE = re.compile(r"^\s*(\d+)")
+_MARKER_RE = re.compile(
+    r"(?:\[|【)\s*(\d+(?:\s*,\s*\d+)*)(?:\s*[†‡][^\]】]*)?\s*(?:\]|】)"
+)
+
+
+def normalize_citation_markers(text: str) -> str:
+    """Rewrite provider footnotes such as 【1†L1-L4】 into clickable [1] markers."""
+
+    def _replace(match: re.Match[str]) -> str:
+        nums = [part.strip() for part in match.group(1).split(",") if part.strip().isdigit()]
+        if not nums:
+            return match.group(0)
+        return "".join(f"[{n}]" for n in nums)
+
+    return _MARKER_RE.sub(_replace, text)
 
 
 @dataclass
@@ -41,14 +58,14 @@ class CitationAuditResult:
 
 
 def extract_citation_indices(text: str) -> list[int]:
-    """Find all citation integers referenced in bracket notation (e.g., [1], [1, 2])."""
+    """Find citation integers in [1], [1, 2], 【1】, or 【1†L1-L4】 footnote form."""
     indices: set[int] = set()
-    for match in CITATION_PATTERN.finditer(text):
-        group = match.group(1)
-        for part in group.split(","):
-            part_str = part.strip()
-            if part_str.isdigit():
-                indices.add(int(part_str))
+    for match in _BRACKET_RE.finditer(text):
+        inner = match.group(1)
+        for part in inner.split(","):
+            leading = _LEADING_INT_RE.match(part)
+            if leading:
+                indices.add(int(leading.group(1)))
     return sorted(indices)
 
 
@@ -85,7 +102,7 @@ def audit_citations(
                     title=passage.title,
                     breadcrumb=passage.breadcrumb,
                     page=passage.page,
-                    text_snippet=passage.text[:200] + ("..." if len(passage.text) > 200 else ""),
+                    text_snippet=passage.text,
                     is_parent_expanded=passage.is_parent_expanded,
                 )
             )

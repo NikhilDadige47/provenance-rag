@@ -36,6 +36,8 @@ def client(tmp_path: Path):
         cohere_api_key="test_cohere",
         groq_api_key="test_groq",
         qdrant_url=":memory:",
+        landingai_api_key=None,
+        llamaparse_api_key=None,
     )
     store = QdrantVectorStore(cfg=cfg)
     job_runner = JobRunner(db=db, store=store, cfg=cfg)
@@ -109,7 +111,7 @@ def test_upload_submit_and_poll_job(client: TestClient) -> None:
 
 
 def test_upload_cloud_parser_requires_key(client: TestClient) -> None:
-    """Submitting cloud parser without key header returns 400."""
+    """Explicit cloud parser without owner key and without visitor key returns 400."""
     s_resp = client.post("/session")
     token = s_resp.json()["session_id"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -121,6 +123,37 @@ def test_upload_cloud_parser_requires_key(client: TestClient) -> None:
     resp = client.post("/upload", headers=headers, files=files, data=data)
     assert resp.status_code == 400
     assert "requires an API key" in resp.json()["detail"]
+
+
+def test_upload_auto_does_not_require_visitor_key(client: TestClient) -> None:
+    """parser=auto uses the owner waterfall and accepts uploads with no visitor parser key."""
+    s_resp = client.post("/session")
+    token = s_resp.json()["session_id"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    pdf_bytes = create_minimal_pdf_bytes("Auto Parser Doc")
+    files = {"file": ("auto.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
+    data = {"parser": "auto", "allow_fallback": "true"}
+
+    resp = client.post("/upload", headers=headers, files=files, data=data)
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["status"] == "queued"
+    assert body["parser_used"] == "auto"
+
+
+def test_upload_default_parser_is_auto(client: TestClient) -> None:
+    """Omitting the parser form field defaults to owner-paid auto waterfall."""
+    s_resp = client.post("/session")
+    token = s_resp.json()["session_id"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    pdf_bytes = create_minimal_pdf_bytes("Default Parser Doc")
+    files = {"file": ("default.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
+
+    resp = client.post("/upload", headers=headers, files=files)
+    assert resp.status_code == 202
+    assert resp.json()["parser_used"] == "auto"
 
 
 def test_job_isolation_between_sessions(client: TestClient) -> None:

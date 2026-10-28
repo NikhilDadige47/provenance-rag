@@ -48,6 +48,8 @@ def job_env(tmp_path: Path):
         cohere_api_key="test_cohere_key",
         groq_api_key="test_groq_key",
         qdrant_url=":memory:",
+        landingai_api_key=None,
+        llamaparse_api_key=None,
     )
     store = QdrantVectorStore(cfg=cfg)
     runner = JobRunner(db=db, store=store, cfg=cfg)
@@ -225,3 +227,72 @@ async def test_session_parse_cache_hit(job_env) -> None:
 
     job2 = db.get_job(job_id2, session_id="session_job_1")
     assert job2["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_job_runner_auto_records_local_when_owner_keys_missing(job_env) -> None:
+    """auto with no Landing AI / LlamaParse keys lands on local PyMuPDF and still indexes."""
+    db, store, runner, cfg = job_env
+    cfg.landingai_api_key = None
+    cfg.llamaparse_api_key = None
+    pdf_bytes = create_sample_pdf_bytes("Auto Local")
+
+    job_id = "job_auto_local"
+    db.create_job(job_id=job_id, session_id="session_job_1", parser_name="auto")
+
+    await runner.run_ingestion_pipeline(
+        job_id=job_id,
+        session_id="session_job_1",
+        filename="auto.pdf",
+        file_bytes=pdf_bytes,
+        parser_name="auto",
+    )
+
+    job = db.get_job(job_id, session_id="session_job_1")
+    assert job["status"] == "ready"
+    doc = db.get_document(job["doc_id"], session_id="session_job_1")
+    assert doc["parser_used"] == "local_pymupdf"
+
+
+@pytest.mark.asyncio
+async def test_job_runner_auto_uses_landingai_when_owner_key_present(job_env) -> None:
+    db, store, runner, cfg = job_env
+    from src.ingest.parsers.structured_doc import Block, BlockType, StructuredDoc
+    from src.security.secret import Secret
+
+    cfg.landingai_api_key = Secret("mock_landing_key")
+    runner.cfg.landingai_api_key = Secret("mock_landing_key")
+    pdf_bytes = create_sample_pdf_bytes("Auto Landing")
+
+    landing_doc = StructuredDoc(
+        doc_id="doc_land",
+        title="Auto Landing",
+        page_count=1,
+        parser_used="landingai",
+        blocks=[
+            Block(type=BlockType.HEADING, text="Executive Summary", level=1, page=1, order=0),
+            Block(
+                type=BlockType.PARAGRAPH,
+                text="Company quarterly operating revenue increased by 22% year-over-year.",
+                page=1,
+                order=1,
+            ),
+        ],
+    )
+
+    job_id = "job_auto_land"
+    db.create_job(job_id=job_id, session_id="session_job_1", parser_name="auto")
+
+    with patch.object(runner.router.landing_adapter, "parse", return_value=landing_doc):
+        await runner.run_ingestion_pipeline(
+            job_id=job_id,
+            session_id="session_job_1",
+            filename="auto_land.pdf",
+            file_bytes=pdf_bytes,
+            parser_name="auto",
+        )
+
+    job = db.get_job(job_id, session_id="session_job_1")
+    assert job["status"] == "ready"
+    doc = db.get_document(job["doc_id"], session_id="session_job_1")
+    assert doc["parser_used"] == "landingai"

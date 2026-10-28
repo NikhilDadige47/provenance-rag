@@ -16,7 +16,7 @@ class AccessTier(StrEnum):
     """The three access tiers supported by Provenance RAG."""
 
     TIER_A_DEMO = "tier_a_demo"  # Zero keys, chat over pre-indexed demo corpus
-    TIER_B_UPLOAD = "tier_b_upload"  # Upload PDF with free local parser or visitor parser key
+    TIER_B_UPLOAD = "tier_b_upload"  # Upload PDF; owner-paid auto parse, optional visitor LLM key
     TIER_C_BYOK = "tier_c_byok"  # Visitor supplies both parser (or local) and own LLM key
 
 
@@ -57,6 +57,16 @@ class OwnerConfig(BaseSettings):
     default_llm_provider: str = Field(default="groq")
     default_llm_api_key: Secret = Field(default=Secret("gsk_placeholder"))
     default_llm_model: str = Field(default="openai/gpt-oss-120b")
+
+    # Cloud Parser Keys (Owner Free Tier Pools)
+    landingai_api_key: Secret | None = Field(default=None)
+    llamaparse_api_key: Secret | None = Field(default=None)
+
+    # Demo corpus ingest only (does not change visitor upload parsing)
+    demo_parser: str = Field(
+        default="local_pymupdf",
+        description="Parser for demo_corpus ingest: local_pymupdf | llamaparse | landingai",
+    )
 
     # Spend Controls & Caps (Owner Protection)
     kill_switch_active: bool = Field(default=False)

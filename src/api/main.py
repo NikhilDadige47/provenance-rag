@@ -31,9 +31,9 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -275,6 +275,27 @@ app.include_router(chat_router, tags=["chat"])
 
 # Upload, jobs & lifecycle endpoints: /upload, /upload/validate, /jobs/{id}, /session/documents, DELETE /session
 app.include_router(upload_router, tags=["upload"])
+
+# Demo PDFs for the Tier A preview iframe. Registered as a route (not a
+# catch-all mount) so it stays ahead of the SPA StaticFiles mount at "/".
+_DEMO_CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "demo_corpus"
+
+
+@app.get("/demo_corpus/{filename}", include_in_schema=False)
+async def serve_demo_pdf(filename: str) -> FileResponse:
+    safe_name = Path(filename).name
+    if safe_name != filename or not safe_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    pdf_path = _DEMO_CORPUS_DIR / safe_name
+    if not pdf_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=safe_name,
+        content_disposition_type="inline",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Mount React Single-Page Application (frontend-react/dist)

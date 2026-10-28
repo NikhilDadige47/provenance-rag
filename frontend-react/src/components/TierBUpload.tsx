@@ -7,9 +7,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  ShieldCheck,
-  FileCheck,
-  Key,
   Sparkles,
   ArrowRight,
   HelpCircle,
@@ -25,7 +22,7 @@ interface TierBUploadProps {
   onUploadSuccess: () => void;
   onRequestDelete: () => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
-  onKeyConfigChange?: (config: LLMConfig) => void;
+  onKeyConfigChange?: (config: LLMConfig | null) => void;
   onAskExample?: (q: string) => void;
   onIngestStateChange?: (isIngesting: boolean, docName?: string) => void;
 }
@@ -63,8 +60,8 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   const handleToggleCustomKey = (checked: boolean) => {
     setUseCustomKey(checked);
     if (!checked) {
-      // Reset visitor key on API client so it uses server keys
-      api.setVisitorKeys(null as any);
+      api.setVisitorKeys(null);
+      onKeyConfigChange?.(null);
       onToast('Switched back to standard owner-backed quota.', 'info');
     }
   };
@@ -88,7 +85,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
     setBlobUrls((prev) => ({ ...prev, [file.name]: blobUrl }));
 
     try {
-      const res = await api.uploadFile(file, 'local_pymupdf');
+      const res = await api.uploadFile(file, 'auto');
       const jobId = res.job_id;
 
       setUploadProgress({ stage: 'Extracting text and structure...', pct: 45 });
@@ -138,7 +135,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
           console.warn('Polling warning:', pollErr);
         }
 
-        if (pollCount > 60) {
+        if (pollCount > 120) {
           clearInterval(pollInterval);
           setIsUploading(false);
           setUploadProgress(null);
@@ -168,37 +165,17 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   return (
     <div className="space-y-4">
       {/* Upload Box */}
-      <div className="border border-border rounded-lg p-5 bg-card shadow-sm space-y-4">
+      <div className="border border-border/80 rounded-lg p-5 surface-inset shadow-sm space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <UploadCloud className="size-5 text-primary" />
-            <h3 className="font-semibold text-base">Document Ingestion</h3>
+          <div className="space-y-0.5">
+            <h3 className="font-semibold text-base text-foreground">Document Ingestion</h3>
+            <p className="text-xs text-muted-foreground">
+              Isolated session · Max 10MB · 30 pages · Owner-paid parse · TTL shred
+            </p>
           </div>
-          <span className="text-xs font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-2.5 py-0.5 rounded-full">
-            Isolated Session Tenant
+          <span className="text-[11px] font-mono text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-md border border-border/60">
+            Isolated Tenant
           </span>
-        </div>
-
-        {/* Guardrail Limits Banner */}
-        <div className="p-3 rounded-lg border border-border/80 bg-muted/30 space-y-1.5 text-xs">
-          <div className="flex items-center gap-1.5 font-semibold text-foreground">
-            <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Built-in Enterprise Limits & Safety</span>
-          </div>
-          <div className="flex flex-wrap gap-2 text-[11px] font-mono text-muted-foreground pt-1">
-            <span className="px-2 py-0.5 rounded bg-card border border-border/70">
-              Max 10MB PDF
-            </span>
-            <span className="px-2 py-0.5 rounded bg-card border border-border/70">
-              Up to 30 Pages
-            </span>
-            <span className="px-2 py-0.5 rounded bg-card border border-border/70">
-              3 Docs / Session
-            </span>
-            <span className="px-2 py-0.5 rounded bg-card border border-border/70 text-emerald-600 dark:text-emerald-400">
-              Auto-Shredded on Exit
-            </span>
-          </div>
         </div>
 
         {/* Drag and Drop Zone */}
@@ -216,10 +193,10 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             }
           }}
           onClick={() => !isUploading && fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+          className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
             dragActive
               ? 'border-primary bg-primary/5'
-              : 'border-border/80 hover:border-primary/50 hover:bg-muted/30'
+              : 'border-border/80 hover:border-primary/50 hover:bg-muted/20'
           } ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
         >
           <input
@@ -234,15 +211,13 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             }}
           />
 
-          <div className="size-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
-            <UploadCloud className="size-6" />
-          </div>
+          <UploadCloud className="size-6 text-muted-foreground mb-2" />
 
-          <p className="text-sm font-medium text-foreground">
+          <p className="text-xs font-medium text-foreground">
             {selectedFile ? selectedFile.name : 'Click to browse or drop your PDF here'}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Direct auto-parsing • Max 10MB • Up to 30 pages
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            PDF files only (max 10MB, up to 30 pages)
           </p>
         </div>
 
@@ -267,17 +242,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
 
         {/* Optional BYOK API Key Checkbox & Slide-down Zone */}
         <div className="pt-2 border-t border-border/60 space-y-3">
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-foreground select-none">
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground select-none">
             <input
               type="checkbox"
               checked={useCustomKey}
               onChange={(e) => handleToggleCustomKey(e.target.checked)}
-              className="size-4 rounded border-border text-primary focus:ring-primary cursor-pointer accent-primary"
+              className="size-3.5 rounded border-border text-primary focus:ring-primary cursor-pointer accent-primary"
             />
-            <span className="flex items-center gap-1.5">
-              <Key className="size-3.5 text-amber-500" />
-              <span>I want to use my own LLM API Key (Optional)</span>
-            </span>
+            <span>I want to use my own LLM API Key (Optional)</span>
           </label>
 
           <AnimatePresence>
@@ -325,7 +297,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
       )}
 
       {/* Session Ingested Documents List with Click to View PDF Modal */}
-      <div className="border border-border rounded-lg p-5 bg-card shadow-sm space-y-3">
+      <div className="border border-border rounded-lg p-5 surface-inset shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileText className="size-4 text-primary" />

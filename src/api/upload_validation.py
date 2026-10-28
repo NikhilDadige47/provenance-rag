@@ -18,6 +18,7 @@ import pymupdf
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 
+from src.ingest.parsers.selection import visitor_parser_key_required
 from src.security.config import OwnerConfig
 from src.storage.db import DatabaseManager
 
@@ -206,7 +207,7 @@ def build_upload_estimate(
     cfg: OwnerConfig,
 ) -> UploadEstimateResponse:
     """Build user-facing upload estimate and quota preview."""
-    requires_key = parser_name.strip().lower() in ("llamaparse", "landingai", "unstructured")
+    requires_key = visitor_parser_key_required(parser_name, cfg)
     current_docs = session_row.get("docs_count", 0) or 0
     current_pages = session_row.get("pages_used", 0) or 0
     current_chunks = session_row.get("chunks_embedded", 0) or 0

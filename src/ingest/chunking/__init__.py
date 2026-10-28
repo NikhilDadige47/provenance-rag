@@ -7,10 +7,12 @@ from src.ingest.chunking.models import (
     ChunkingResult,
     ParentChunk,
 )
+from src.ingest.chunking.simple_chunker import SimpleChunker
 from src.ingest.chunking.tokenizer import estimate_tokens
 
 __all__ = [
     "HybridChunker",
+    "SimpleChunker",
     "ChunkingConfig",
     "ChunkingResult",
     "ParentChunk",

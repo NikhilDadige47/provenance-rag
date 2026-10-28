@@ -82,3 +82,28 @@ def test_context_expander_deduplicates_same_parent():
     res = expander.expand([chunk1, chunk2], scope="demo")
     assert len(res.passages) == 1
     assert mock_db.get_parent.call_count == 1
+
+
+def test_context_expander_skips_duplicate_child_text():
+    """Overlapping rerank hits of the same snippet must not become two passages."""
+    mock_db = MagicMock()
+    mock_db.get_parent.return_value = None
+    expander = ContextExpander(db=mock_db)
+    same_text = "The Company's total net sales were $383.3 billion during 2023."
+    chunks = [
+        RetrievedChunk(
+            chunk_id=f"c{i}",
+            doc_id="d1",
+            parent_id=f"p{i}",
+            title="Apple-Annual-Report-2023",
+            breadcrumb="Item 7",
+            page=1,
+            bbox=None,
+            display_text=same_text,
+            embedding_text=same_text,
+            score=0.9 - i * 0.05,
+        )
+        for i in range(2)
+    ]
+    res = expander.expand(chunks, scope="demo")
+    assert len(res.passages) == 1

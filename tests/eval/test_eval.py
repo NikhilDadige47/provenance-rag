@@ -9,12 +9,13 @@ import pytest
 
 from eval.ablation import AblationRunner
 from eval.evaluate import Evaluator
+from eval.gate import MetricFloors, assert_production_floors, assert_strategy_ordering
+from eval.harness import OfflineEvalHarness
 from eval.models import EvalItem
 from eval.tier_checks import TierVerifier
 from eval.tune_thresholds import ThresholdTuner
 from src.generation.prompt import PromptBuilder
 from src.retrieval.expansion import ContextExpander
-from src.retrieval.rerank import CohereReranker
 from src.retrieval.search import HybridSearchPipeline, RetrievedChunk, SearchResult
 from src.security.config import OwnerConfig
 from src.storage.db import DatabaseManager
@@ -76,9 +77,15 @@ def eval_env(tmp_path: Path):
         groq_api_key="test_groq_key",
         qdrant_url=":memory:",
     )
-
-    # Mock searcher pipeline
-    searcher = HybridSearchPipeline(embedder=AsyncMock(), store=AsyncMock())
+    mock_reranker = AsyncMock()
+    async def mock_rerank(query, chunks, top_n=5, **kwargs):
+        return chunks[:top_n]
+    mock_reranker.rerank = AsyncMock(side_effect=mock_rerank)
+    searcher = HybridSearchPipeline(
+        embedder=AsyncMock(),
+        store=AsyncMock(),
+        reranker=mock_reranker,
+    )
 
     async def mock_search(query: str, **kwargs) -> SearchResult:
         if "mars" in query.lower():
@@ -137,7 +144,7 @@ def eval_env(tmp_path: Path):
         )
 
     searcher.search = AsyncMock(side_effect=mock_search)
-    reranker = CohereReranker()
+    reranker = mock_reranker
     expander = ContextExpander(db=db)
     prompt_builder = PromptBuilder()
 
@@ -149,8 +156,6 @@ def eval_env(tmp_path: Path):
         db=db,
         cfg=cfg,
     )
-
-    return evaluator, db, cfg
 
     return evaluator, db, cfg
 
@@ -206,11 +211,30 @@ async def test_ablation_runner(
     out_file = tmp_path / "test_ablation.md"
     rows = await runner.run_all(items=sample_golden_items, output_file=out_file)
 
-    assert len(rows) == 5
+    assert len(rows) == 4
     assert out_file.exists()
     content = out_file.read_text(encoding="utf-8")
     assert "Ablation Comparison Table" in content
     assert "Senior Takeaways" in content
+
+
+@pytest.mark.asyncio
+async def test_retrieval_accuracy_regression_gate(tmp_path: Path) -> None:
+    """CI quality gate: score the 50-question golden set on dual local indexes.
+
+    Fails the build when the rerank pipeline drops below eval/results/floors.json
+    or when reranking no longer beats simple chunking.
+    """
+    items = Evaluator.load_golden_set()
+    assert len(items) == 50
+
+    runner = AblationRunner(harness=OfflineEvalHarness.from_fixture())
+    rows = await runner.run_all(items=items, output_file=tmp_path / "ablation.md")
+    floors = MetricFloors.load()
+    by_name = {row.config_name: row for row in rows}
+
+    assert_production_floors(by_name["4_reranking"], floors)
+    assert_strategy_ordering(rows, floors)
 
 
 @pytest.mark.asyncio

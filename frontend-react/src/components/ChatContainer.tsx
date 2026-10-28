@@ -1,16 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Send,
   GitBranch,
   AlertTriangle,
   Shield,
   BookOpen,
-  Sparkles,
   Menu,
   Lock,
   Loader2,
-  ShieldCheck,
-  FileText,
   CheckCircle2,
 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -20,30 +17,73 @@ import { api } from '../lib/api';
 import { MarkdownMessage } from './MarkdownMessage';
 import { AIReasoningTrace } from './AIReasoningTrace';
 import { SourcesDropdown } from './SourcesDropdown';
+import { SourceInspectorPanel } from './SourceInspectorPanel';
+import queryHistoryIcon from '../assets/query-history.png';
 
 interface ChatContainerProps {
   scope: string;
   exampleChips: ExampleQuestion[];
+  queuedQuestion?: string | null;
+  queuedNonce?: number;
   onUsageUpdate: () => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
   onOpenMobileMenu?: () => void;
   isIngesting?: boolean;
   documentCount?: number;
   activeDocName?: string;
+  llmProvider?: string;
+  llmModel?: string;
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  groq: 'Groq',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
+  mistral: 'Mistral',
+};
+
+function formatLlmLabel(provider?: string, model?: string): string {
+  const rawProvider = (provider || '').trim();
+  const rawModel = (model || '').trim();
+  if (!rawProvider && !rawModel) return '';
+  const name =
+    PROVIDER_LABELS[rawProvider.toLowerCase()] ||
+    (rawProvider ? rawProvider.charAt(0).toUpperCase() + rawProvider.slice(1) : 'LLM');
+  if (!rawModel) return name;
+  return `${name} (${rawModel})`;
 }
 
 export const ChatContainer: React.FC<ChatContainerProps> = ({
   scope,
   exampleChips,
+  queuedQuestion = null,
+  queuedNonce = 0,
   onUsageUpdate,
   onToast,
   onOpenMobileMenu,
   isIngesting = false,
   documentCount = 0,
   activeDocName,
+  llmProvider,
+  llmModel,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [inspectedSource, setInspectedSource] = useState<SourceCard | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const citationKey = (src: SourceCard) => src.citation.replace(/[\[\]【】]/g, '').trim();
+
+  const openSourceInspector = useCallback((src: SourceCard) => {
+    setInspectedSource((current) => {
+      if (current && citationKey(current) === citationKey(src)) {
+        setInspectorOpen(false);
+        return null;
+      }
+      setInspectorOpen(true);
+      return src;
+    });
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [activeThoughtStages, setActiveThoughtStages] = useState<{
     stageIdx: number;
@@ -60,22 +100,16 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   const isProcessing = isIngesting;
   const isInputDisabled = isLoading || isProcessing || isLocked;
 
+  const llmLabel = formatLlmLabel(llmProvider, llmModel);
+
   const getPlaceholder = () => {
     if (isProcessing) {
-      return activeDocName
-        ? `Ingesting "${activeDocName}" & building vectors... Please wait.`
-        : 'Ingesting document and generating embeddings... Please wait.';
+      return 'Ingesting document...';
     }
     if (isLocked) {
-      return 'Please upload a PDF or select Demo Corpus to start chatting...';
+      return 'Upload a document to chat';
     }
-    if (activeDocName) {
-      return `Ask anything about "${activeDocName}" with strict citations...`;
-    }
-    if (scope === 'demo') {
-      return 'Ask anything about the demo documents with strict citations...';
-    }
-    return 'Ask a question with verified citations...';
+    return 'Type your query...';
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -88,6 +122,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages, activeThoughtStages]);
+
+  useEffect(() => {
+    if (!queuedQuestion || isInputDisabled) return;
+    setInput(queuedQuestion);
+    requestAnimationFrame(() => {
+      document.getElementById('chat-input')?.focus();
+    });
+  }, [queuedQuestion, queuedNonce, isInputDisabled]);
 
   const handleSend = async (questionText?: string) => {
     const q = (questionText || input).trim();
@@ -214,9 +256,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-screen flex-1 bg-card overflow-hidden">
+    <div className="relative flex flex-col h-full flex-1 surface-panel overflow-hidden">
       {/* Chat Header */}
-      <div className="h-16 px-4 border-b border-border bg-card flex items-center justify-between text-xs shrink-0">
+      <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between text-xs shrink-0">
         <div className="flex items-center gap-2.5">
           {onOpenMobileMenu && (
             <Button
@@ -234,29 +276,37 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           </div>
         </div>
-        <span className="text-[11px] font-mono text-muted-foreground hidden sm:inline-block">Groq Llama-3.3 + Cohere v3.5</span>
+        {llmLabel && (
+          <span
+            className="text-[11px] font-mono text-muted-foreground hidden sm:inline-block truncate max-w-[280px]"
+            title={llmLabel}
+          >
+            {llmLabel}
+          </span>
+        )}
       </div>
 
+      <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Messages Feed */}
       <div
         ref={chatScrollRef}
-        className={`flex-1 ${
+        className={`flex-1 min-h-0 ${
           messages.length === 0 && !isLoading
             ? 'flex flex-col items-center justify-center p-6 overflow-hidden'
             : 'overflow-y-auto p-4 space-y-4'
         }`}
       >
         {messages.length === 0 && !isLoading ? (
-          <div className="flex flex-col items-center justify-center text-center text-muted-foreground space-y-3.5 select-none max-w-md px-4">
-            <div className="size-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-sm">
-              <Sparkles className="size-6" />
-            </div>
-            <div className="space-y-1.5">
-              <h4 className="font-semibold text-foreground text-sm sm:text-[15px] tracking-tight">Ask anything over the documents</h4>
-              <p className="text-xs sm:text-[13px] text-muted-foreground max-w-sm leading-relaxed">
-                Every statement is backed by verifiable provenance citations. Type a question or click any sample question to start.
-              </p>
-            </div>
+          <div className="flex flex-col items-center justify-center text-center select-none gap-3 px-4">
+            <img
+              src={queryHistoryIcon}
+              alt=""
+              title="History icon from Flaticon"
+              className="size-20 object-contain opacity-90 dark:invert"
+            />
+            <h4 className="font-medium text-sm text-muted-foreground tracking-tight">
+              What do you want to know?
+            </h4>
           </div>
         ) : (
           <>
@@ -306,37 +356,25 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
                 {/* Message Content: Borderless typography rendered directly */}
                 <div className="w-full text-[14px] leading-relaxed text-foreground pl-0.5">
-                  <MarkdownMessage content={msg.content} />
+                  <MarkdownMessage
+                    content={msg.content}
+                    sources={msg.sources}
+                    onCitationClick={openSourceInspector}
+                  />
                 </div>
 
                 {/* Sources Dropdown: Collapsed by default, reveals source buttons when opened */}
                 {msg.sources && msg.sources.length > 0 && (
-                  <SourcesDropdown sources={msg.sources} messageId={msg.id} />
-                )}
-
-                {/* Provenance Grounding Audit Badge */}
-                {msg.is_found !== false && (
-                  <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5 text-[11px] font-mono select-none">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
-                      <ShieldCheck className="size-3.5 shrink-0" />
-                      <span className="font-semibold">{msg.is_grounded !== false ? '100% Grounded' : 'Cited Provenance'}</span>
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
-                      <Sparkles className="size-3 text-primary shrink-0" />
-                      <span>{msg.rerank_fallback ? 'Hybrid Rank (Circuit Breaker)' : 'Cohere Rerank v3.5'}</span>
-                    </div>
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
-                        <FileText className="size-3 text-primary shrink-0" />
-                        <span>{msg.sources.length} {msg.sources.length === 1 ? 'Source' : 'Sources'} Verified</span>
-                      </div>
-                    )}
-                    {msg.model_used && (
-                      <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] text-muted-foreground/70 border border-border/40">
-                        <span>{msg.model_used.includes('/') ? msg.model_used.split('/').pop() : msg.model_used}</span>
-                      </div>
-                    )}
-                  </div>
+                  <SourcesDropdown
+                    sources={msg.sources}
+                    messageId={msg.id}
+                    activeCitation={
+                      inspectedSource
+                        ? inspectedSource.citation.replace(/[\[\]【】]/g, '').trim()
+                        : null
+                    }
+                    onSelectSource={openSourceInspector}
+                  />
                 )}
 
               </div>
@@ -351,7 +389,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               isLoading={true}
               activeStageIdx={activeThoughtStages.stageIdx}
               timings_ms={activeThoughtStages.timings}
-              modelUsed="Groq Llama-3.3-70b-versatile"
+              modelUsed={llmLabel || undefined}
               scope={scope}
               defaultExpanded={true}
             />
@@ -366,8 +404,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         )}
       </div>
 
+      <SourceInspectorPanel
+        source={inspectedSource}
+        open={inspectorOpen}
+        onToggle={() => setInspectorOpen((prev) => !prev)}
+        onClose={() => {
+          setInspectorOpen(false);
+          setInspectedSource(null);
+        }}
+      />
+      </div>
+
       {/* Input Bar with Smart States */}
-      <div className="px-3 sm:px-4 py-3 pb-4 border-t border-border bg-card shadow-[0_-4px_16px_rgba(0,0,0,0.04)] shrink-0">
+      <div className="px-3 sm:px-4 py-2.5 border-t border-border surface-header shrink-0">
         {/* Processing State Banner */}
         {isProcessing && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary mb-2.5 font-medium animate-pulse">
@@ -388,19 +437,20 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           </div>
         )}
 
-        <div className="w-full flex items-center gap-2.5 relative">
+        <div className="w-full flex items-center gap-2 relative">
           <div className="relative flex-1">
             {isLocked && (
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
-                <Lock className="size-4" />
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
+                <Lock className="size-3.5" />
               </div>
             )}
             {isProcessing && (
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-primary">
-                <Loader2 className="size-4 animate-spin" />
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-primary">
+                <Loader2 className="size-3.5 animate-spin" />
               </div>
             )}
             <input
+              id="chat-input"
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -412,29 +462,30 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               }}
               disabled={isInputDisabled}
               placeholder={getPlaceholder()}
-              className={`w-full h-13 sm:h-14 ${
-                isLocked || isProcessing ? 'pl-11 pr-5' : 'px-5'
-              } rounded-xl border border-border bg-background/60 focus:bg-background text-sm sm:text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed`}
+              autoComplete="off"
+              className={`w-full h-10 ${
+                isLocked || isProcessing ? 'pl-9 pr-3.5' : 'px-3.5'
+              } rounded-lg border border-border bg-background/60 focus:bg-background text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed placeholder:text-muted-foreground/70`}
             />
           </div>
           <Button
             onClick={() => handleSend()}
             disabled={isInputDisabled || !input.trim()}
-            className="gap-2 h-13 sm:h-14 px-5 sm:px-6 rounded-xl text-sm sm:text-base font-medium shadow-sm shrink-0"
+            className="gap-1.5 h-10 px-4 rounded-lg text-sm font-medium shadow-sm shrink-0"
           >
             {isProcessing ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
-                <span className="hidden sm:inline">Processing...</span>
+                <Loader2 className="size-3.5 animate-spin" />
+                <span className="hidden sm:inline">Processing</span>
               </>
             ) : isLocked ? (
               <>
-                <Lock className="size-4" />
+                <Lock className="size-3.5" />
                 <span className="hidden sm:inline">Locked</span>
               </>
             ) : (
               <>
-                <Send className="size-4 sm:size-5" />
+                <Send className="size-3.5" />
                 <span className="hidden sm:inline">Send</span>
               </>
             )}

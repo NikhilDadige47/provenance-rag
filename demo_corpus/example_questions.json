@@ -1,61 +1,61 @@
 [
   {
     "id": "q1",
-    "chip": "What is the primary purpose stated in the Preamble of the US Constitution?",
-    "document": "us_constitution_bill_of_rights.pdf",
-    "expected_answer_snippet": "form a more perfect Union, establish Justice, insure domestic Tranquility"
+    "chip": "What was Apple's total net sales in fiscal year 2023?",
+    "document": "Apple-Annual-Report-2023.pdf",
+    "expected_answer_snippet": "$383,285 million"
   },
   {
     "id": "q2",
-    "chip": "Which freedoms are explicitly protected under the First Amendment?",
-    "document": "us_constitution_bill_of_rights.pdf",
-    "expected_answer_snippet": "religion, speech, press, right of the people peaceably to assemble"
+    "chip": "What was Apple's total net sales in fiscal year 2024?",
+    "document": "Apple-Annual-Report-2024.pdf",
+    "expected_answer_snippet": "$391,035 million"
   },
   {
     "id": "q3",
-    "chip": "What protection is guaranteed by the Fourth Amendment?",
-    "document": "us_constitution_bill_of_rights.pdf",
-    "expected_answer_snippet": "unreasonable searches and seizures"
+    "chip": "What was Apple's total net sales in fiscal year 2025?",
+    "document": "Apple-Annual-Report-2025.pdf",
+    "expected_answer_snippet": "$416,161 million"
   },
   {
     "id": "q4",
-    "chip": "What was Acme Corporation's total consolidated revenue in FY2025?",
-    "document": "acme_annual_financial_report_2025.pdf",
-    "expected_answer_snippet": "$120 million"
+    "chip": "What were iPhone net sales in FY2025?",
+    "document": "Apple-Annual-Report-2025.pdf",
+    "expected_answer_snippet": "$209,586 million"
   },
   {
     "id": "q5",
-    "chip": "How much revenue did Enterprise Cloud services contribute to Acme in 2025?",
-    "document": "acme_annual_financial_report_2025.pdf",
-    "expected_answer_snippet": "$75,000,000"
+    "chip": "What were Services net sales in FY2024?",
+    "document": "Apple-Annual-Report-2024.pdf",
+    "expected_answer_snippet": "$96,169 million"
   },
   {
     "id": "q6",
-    "chip": "By what percentage did Acme's operating expenses decrease?",
-    "document": "acme_annual_financial_report_2025.pdf",
-    "expected_answer_snippet": "decreased by 8%"
+    "chip": "How much did Apple spend on Research & Development in FY2025?",
+    "document": "Apple-Annual-Report-2025.pdf",
+    "expected_answer_snippet": "$34,550 million"
   },
   {
     "id": "q7",
-    "chip": "What is Acme Corporation's debt-to-equity ratio?",
-    "document": "acme_annual_financial_report_2025.pdf",
-    "expected_answer_snippet": "0.42"
+    "chip": "What was Apple's operating income in FY2024?",
+    "document": "Apple-Annual-Report-2024.pdf",
+    "expected_answer_snippet": "$123,216 million"
   },
   {
     "id": "q8",
-    "chip": "Where are legislative powers vested according to Article I of the Constitution?",
-    "document": "us_constitution_bill_of_rights.pdf",
-    "expected_answer_snippet": "in a Congress of the United States, which shall consist of a Senate and House of Representatives"
+    "chip": "What was total shareholders' equity reported at the end of FY2025?",
+    "document": "Apple-Annual-Report-2025.pdf",
+    "expected_answer_snippet": "$73,733 million"
   },
   {
     "id": "q9",
-    "chip": "What is Acme's dividend payout policy for 2027?",
+    "chip": "What was Apple's total copper mining revenue on Mars?",
     "document": null,
     "expected_answer_snippet": "NOT_FOUND"
   },
   {
     "id": "q10",
-    "chip": "What were the sales figures for Mars rover titanium wheels?",
+    "chip": "How many supersonic passenger jets did Apple deliver in 2023?",
     "document": null,
     "expected_answer_snippet": "NOT_FOUND"
   }

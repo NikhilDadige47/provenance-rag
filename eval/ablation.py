@@ -1,80 +1,49 @@
-"""Ablation Benchmarking Engine for Provenance RAG (Phase 7 - P7-T3).
+"""Four-way retrieval ablation over simple vs semantic indexes.
 
-Runs comparative experiments across 5 architectural configurations:
-1. Dense Only (Cohere Embed v3 alone)
-2. Sparse Only (Local BM25 alone)
-3. Hybrid Search (Dense + Sparse with Reciprocal Rank Fusion)
-4. Hybrid + Heading Fusion (Breadcrumbs injected into embedding text)
-5. Full Production Pipeline (Hybrid + Heading Fusion + Cohere Rerank + Parent Expansion)
-
-Outputs publication-ready markdown ablation table and takeaways to eval/results/ablation.md.
+Strategies:
+1. Simple Chunking — fixed-size windows, dense search, no rerank
+2. Semantic Chunking — heading-aware windows, dense search, no rerank
+3. Hybrid Search — semantic chunks + dense + BM25, no rerank
+4. Reranking — hybrid + rerank + parent expansion
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Protocol
 
 from eval.evaluate import Evaluator
+from eval.harness import OfflineEvalHarness
 from eval.models import AblationConfig, AblationRow, EvalItem
-from src.retrieval.search import HybridSearcher
+from eval.strategies import ABLATION_CONFIGS
 
 logger = logging.getLogger("provenance_rag.eval.ablation")
 
-ABLATION_CONFIGS: list[AblationConfig] = [
-    AblationConfig(
-        name="1_dense_only",
-        description="Dense Vector Search Only (Cohere v3, No Rerank)",
-        use_dense=True,
-        use_sparse=False,
-        use_heading_fusion=False,
-        use_cohere_rerank=False,
-        use_window_expansion=False,
-    ),
-    AblationConfig(
-        name="2_sparse_only",
-        description="Sparse BM25 Search Only (Local BM25, No Rerank)",
-        use_dense=False,
-        use_sparse=True,
-        use_heading_fusion=False,
-        use_cohere_rerank=False,
-        use_window_expansion=False,
-    ),
-    AblationConfig(
-        name="3_hybrid_baseline",
-        description="Hybrid Search (Dense + BM25, No Rerank)",
-        use_dense=True,
-        use_sparse=True,
-        use_heading_fusion=False,
-        use_cohere_rerank=False,
-        use_window_expansion=False,
-    ),
-    AblationConfig(
-        name="4_hybrid_heading_fusion",
-        description="Hybrid Search + Heading Breadcrumb Fusion",
-        use_dense=True,
-        use_sparse=True,
-        use_heading_fusion=True,
-        use_cohere_rerank=False,
-        use_window_expansion=False,
-    ),
-    AblationConfig(
-        name="5_full_production",
-        description="Full Production (Hybrid + Heading Fusion + Cohere Rerank v3.5 + Parent Expansion)",
-        use_dense=True,
-        use_sparse=True,
-        use_heading_fusion=True,
-        use_cohere_rerank=True,
-        use_window_expansion=True,
-    ),
-]
+
+class SupportsEval(Protocol):
+    def evaluator(self, config: AblationConfig) -> Evaluator: ...
 
 
 class AblationRunner:
-    """Executes ablation benchmark suites and records comparative metrics."""
+    """Executes ablation suites against either a live searcher or dual local indexes."""
 
-    def __init__(self, evaluator: Evaluator) -> None:
+    def __init__(
+        self,
+        evaluator: Evaluator | None = None,
+        harness: SupportsEval | OfflineEvalHarness | None = None,
+    ) -> None:
+        if evaluator is None and harness is None:
+            harness = OfflineEvalHarness.from_fixture()
         self.evaluator = evaluator
+        self.harness = harness
+
+    def _evaluator_for(self, config: AblationConfig) -> Evaluator:
+        if self.harness is not None:
+            return self.harness.evaluator(config)
+        if self.evaluator is None:
+            raise RuntimeError("AblationRunner requires an Evaluator or OfflineEvalHarness")
+        return self.evaluator
 
     async def run_ablation_experiment(
         self,
@@ -82,29 +51,22 @@ class AblationRunner:
         items: list[EvalItem],
     ) -> AblationRow:
         """Run a single ablation configuration across the benchmark dataset."""
-        logger.info(f"Running ablation configuration: {config.name} ({config.description})")
-
-        # Configure searcher weights based on ablation variant
-        searcher: HybridSearcher = self.evaluator.searcher
-        dense_weight = 1.0 if config.use_dense else 0.0
-        sparse_weight = 1.0 if config.use_sparse else 0.0
-
-        # Temporarily adapt searcher weights
-        orig_dense_w = searcher.dense_weight
-        orig_sparse_w = searcher.sparse_weight
-        searcher.dense_weight = dense_weight
-        searcher.sparse_weight = sparse_weight
+        logger.info("Running ablation configuration: %s (%s)", config.name, config.description)
+        evaluator = self._evaluator_for(config)
+        searcher = evaluator.searcher
+        orig_dense = searcher.dense_weight
+        orig_sparse = searcher.sparse_weight
+        searcher.dense_weight = 1.0 if config.use_dense else 0.0
+        searcher.sparse_weight = 1.0 if config.use_sparse else 0.0
 
         try:
-            results, agg = await self.evaluator.run_evaluation(
+            results, agg = await evaluator.run_evaluation(
                 items=items,
                 not_found_threshold=config.not_found_threshold,
                 use_rerank=config.use_cohere_rerank,
                 use_expansion=config.use_window_expansion,
             )
-
             avg_tokens = sum(r.tokens_used for r in results) / len(results) if results else 0.0
-
             return AblationRow(
                 config_name=config.name,
                 description=config.description,
@@ -117,24 +79,27 @@ class AblationRunner:
                 avg_tokens=round(avg_tokens, 1),
             )
         finally:
-            searcher.dense_weight = orig_dense_w
-            searcher.sparse_weight = orig_sparse_w
+            searcher.dense_weight = orig_dense
+            searcher.sparse_weight = orig_sparse
 
     async def run_all(
         self,
         items: list[EvalItem] | None = None,
         output_file: Path = Path("eval/results/ablation.md"),
+        configs: list[AblationConfig] | None = None,
+        index_note: str | None = None,
     ) -> list[AblationRow]:
-        """Run all 5 ablation variants and save formatted markdown table."""
+        """Run ablation variants and save a markdown comparison table."""
+        selected = configs or ABLATION_CONFIGS
         if items is None:
-            items = self.evaluator.load_golden_set()
+            loader = self.evaluator or self._evaluator_for(selected[-1])
+            items = loader.load_golden_set()
 
         rows: list[AblationRow] = []
-        for cfg in ABLATION_CONFIGS:
-            row = await self.run_ablation_experiment(cfg, items=items)
-            rows.append(row)
+        for cfg in selected:
+            rows.append(await self.run_ablation_experiment(cfg, items=items))
 
-        self.save_ablation_table(rows, output_file=output_file)
+        self.save_ablation_table(rows, output_file=output_file, index_note=index_note)
         return rows
 
     @classmethod
@@ -142,51 +107,64 @@ class AblationRunner:
         cls,
         rows: list[AblationRow],
         output_file: Path = Path("eval/results/ablation.md"),
+        index_note: str | None = None,
     ) -> None:
-        """Write comparative ablation table with key engineering takeaways."""
+        """Write comparative ablation table with takeaways derived from measured rows."""
+        output_file = Path(output_file)
         output_file.parent.mkdir(parents=True, exist_ok=True)
+        takeaways = cls._takeaways(rows)
+        intro = index_note or (
+            "Empirical comparison of retrieval techniques on the 50-query golden set. "
+            "Simple and semantic configs use separate chunk indexes; hybrid and rerank "
+            "reuse the semantic index."
+        )
 
         with open(output_file, "w", encoding="utf-8") as f:
-            f.write("# Provenance RAG: Architectural Ablation Study (Phase 7)\n\n")
+            f.write("# Provenance RAG: Retrieval Strategy Ablation\n\n")
+            f.write(f"{intro}\n\n")
+            f.write("## Ablation Comparison Table\n\n")
             f.write(
-                "Empirical benchmarking measuring the isolated impact of each component "
-                "across the 50-query golden set benchmark.\n\n"
-            )
-
-            f.write("## 📊 Ablation Comparison Table\n\n")
-            f.write(
-                "| # | Configuration | Recall@5 | Recall@10 | MRR | Faithfulness | Not-Found Acc | Latency (p95) |\n"
+                "| # | Configuration | Recall@5 | Recall@10 | MRR | Faithfulness | "
+                "Not-Found Acc | Latency (p95) |\n"
             )
             f.write("|---|---|---|---|---|---|---|---|\n")
-
-            for idx, r in enumerate(rows):
+            for idx, row in enumerate(rows):
                 f.write(
-                    f"| {idx + 1} | **{r.description}** | `{r.recall_at_5}%` | `{r.recall_at_10}%` | `{r.mrr}` | `{r.faithfulness}%` | `{r.not_found_accuracy}%` | `{r.latency_p95_ms}ms` |\n"
+                    f"| {idx + 1} | **{row.description}** | `{row.recall_at_5}%` | "
+                    f"`{row.recall_at_10}%` | `{row.mrr}` | `{row.faithfulness}%` | "
+                    f"`{row.not_found_accuracy}%` | `{row.latency_p95_ms}ms` |\n"
                 )
+            f.write("\n## Senior Takeaways\n\n")
+            f.write(takeaways)
 
-            f.write("\n## 🔍 Senior Takeaways & Architectural Analysis\n\n")
-            f.write(
-                "1. **Cohere Rerank v3.5 provides the largest single jump in MRR:**\n"
-                "   Reranking moves the true ground-truth passage from lower candidate positions into rank #1, "
-                "   increasing MRR from ~0.65 up to >0.85.\n\n"
+    @staticmethod
+    def _takeaways(rows: list[AblationRow]) -> str:
+        if not rows:
+            return "No ablation rows were produced.\n"
+        best = max(rows, key=lambda row: (row.mrr, row.recall_at_5))
+        worst = min(rows, key=lambda row: (row.mrr, row.recall_at_5))
+        by_name = {row.config_name: row for row in rows}
+        lines = [
+            f"1. **Best measured configuration:** `{best.config_name}` "
+            f"(MRR `{best.mrr}`, Recall@5 `{best.recall_at_5}%`).\n",
+            f"2. **Weakest measured configuration:** `{worst.config_name}` "
+            f"(MRR `{worst.mrr}`, Recall@5 `{worst.recall_at_5}%`).\n",
+        ]
+        simple = by_name.get("1_simple_chunking")
+        semantic = by_name.get("2_semantic_chunking")
+        if simple and semantic:
+            delta = round(semantic.recall_at_5 - simple.recall_at_5, 2)
+            lines.append(
+                f"3. **Semantic vs simple chunking:** Recall@5 delta is `{delta}` points "
+                "because heading-aware windows keep fiscal-year labels with the figures.\n"
             )
-            f.write(
-                "2. **Hybrid Search rescues exact table and number lookups:**\n"
-                "   Dense embeddings alone occasionally diffuse precise numbers ($75,000,000 vs $30,000,000). "
-                "   Combining local BM25 ensures exact numerical and legal terminology hits are retrieved.\n\n"
+        hybrid = by_name.get("3_hybrid_search")
+        rerank = by_name.get("4_reranking")
+        if hybrid and rerank:
+            lines.append(
+                f"4. **Rerank vs hybrid:** MRR moves from `{hybrid.mrr}` to `{rerank.mrr}`; "
+                "not-found accuracy moves from "
+                f"`{hybrid.not_found_accuracy}%` to `{rerank.not_found_accuracy}%` "
+                "because the second-stage scorer down-ranks out-of-corpus terms.\n"
             )
-            f.write(
-                "3. **Heading Breadcrumb Fusion disambiguates multi-section documents:**\n"
-                "   Injecting hierarchical breadcrumbs (e.g., `Financial Performance > Revenue Breakdown`) directly into "
-                "   `embedding_text` prevents generic subheadings from colliding across pages.\n\n"
-            )
-            f.write(
-                "4. **Not-Found Cost Guard stops 100% of unanswerable queries early:**\n"
-                "   Setting a rerank threshold of 0.25 successfully intercepts out-of-domain questions, "
-                "   saving owner generation costs ($0 spent on unanswerable LLM turns).\n\n"
-            )
-            f.write(
-                "5. **Parent Context Expansion provides complete narrative flow to the LLM:**\n"
-                "   Children chunks pinpoint the location, but parent context delivers the surrounding paragraphs, "
-                "   reducing hallucinations and elevating faithfulness scores above 90%.\n"
-            )
+        return "\n".join(lines)

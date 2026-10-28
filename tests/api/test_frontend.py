@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -52,3 +53,17 @@ def test_api_routes_not_shadowed(client: TestClient) -> None:
     res_examples = client.get("/examples")
     assert res_examples.status_code == 200
     assert "examples" in res_examples.json()
+
+
+def test_demo_corpus_pdf_preview_served(client: TestClient) -> None:
+    """Tier A iframe previews are served from demo_corpus/, not the old SPA copies."""
+    res = client.get("/demo_corpus/Apple-Annual-Report-2023.pdf")
+    assert res.status_code == 200
+    assert "pdf" in res.headers.get("content-type", "").lower()
+    assert res.content[:5] == b"%PDF-"
+
+    missing = client.get("/demo_corpus/us_constitution_bill_of_rights.pdf")
+    assert missing.status_code == 404
+
+    not_pdf = client.get("/demo_corpus/example_questions.json")
+    assert not_pdf.status_code == 404

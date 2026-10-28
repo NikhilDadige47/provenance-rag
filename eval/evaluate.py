@@ -15,17 +15,34 @@ import logging
 import statistics
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from eval.models import AggregateMetrics, EvalItem, LLMResponse, QueryResult
+from eval.scoring import rank_hits
 from src.generation.citations import audit_citations
 from src.generation.prompt import PromptBuilder
+from src.interfaces import IReranker
 from src.retrieval.expansion import ContextExpander
-from src.retrieval.rerank import CohereReranker
-from src.retrieval.search import HybridSearchPipeline
+from src.retrieval.search import SearchResult
 from src.security.config import OwnerConfig
 from src.security.tracing import trace_span
 from src.storage.db import DatabaseManager
+
+
+class RetrievalSearcher(Protocol):
+    """Minimal search contract used by the evaluator (live pipeline or local index)."""
+
+    dense_weight: float
+    sparse_weight: float
+
+    async def search(
+        self,
+        query: str,
+        scope: str,
+        limit: int = 30,
+        top_n: int = 5,
+        disable_rerank: bool = False,
+    ) -> SearchResult: ...
 
 logger = logging.getLogger("provenance_rag.eval")
 
@@ -38,8 +55,8 @@ class Evaluator:
 
     def __init__(
         self,
-        searcher: HybridSearchPipeline,
-        reranker: CohereReranker | None,
+        searcher: RetrievalSearcher,
+        reranker: IReranker | None,
         expander: ContextExpander,
         prompt_builder: PromptBuilder,
         db: DatabaseManager,
@@ -75,44 +92,39 @@ class Evaluator:
     ) -> QueryResult:
         """Run a single evaluation item through the pipeline and grade results."""
         start_time = time.time()
-        cohere_embed_calls = 1  # 1 embed call for query
-        cohere_rerank_calls = 1 if (use_rerank and self.reranker) else 0
+        embedder = getattr(self.searcher, "embedder", None) or getattr(
+            getattr(self.searcher, "index", None), "embedder", None
+        )
+        embed_name = getattr(embedder, "model_name", "cohere")
+        rerank_name = getattr(self.reranker, "model_name", "") if self.reranker else ""
+        cohere_embed_calls = 0 if "hashing" in embed_name else 1
+        cohere_rerank_calls = (
+            1 if use_rerank and self.reranker and "lexical" not in rerank_name else 0
+        )
 
         with trace_span("evaluate_item", scope="demo", is_eval=True) as span:
             span.set_attribute("item_id", item.id)
             span.set_attribute("category", item.category)
 
-            # 1. Search through Hybrid Search Pipeline
+            # Keep 10 ranked candidates so Recall@10 is measurable; generate from top 5.
             search_res = await self.searcher.search(
                 query=item.question,
                 scope="demo",
                 limit=20,
-                top_n=5,
+                top_n=10,
                 disable_rerank=(not use_rerank),
             )
 
             chunks = search_res.chunks
+            generation_chunks = chunks[:5]
             top_score = chunks[0].score if chunks else 0.0
+            hit_at_5, hit_at_10, reciprocal_rank = rank_hits(chunks, item)
 
-            # Evaluate retrieval hits on returned chunks
-            hit_at_5 = False
-            hit_at_10 = False
-            reciprocal_rank = 0.0
-
-            if not item.is_not_found and item.expected_page is not None:
-                for idx, c in enumerate(chunks):
-                    if c.page == item.expected_page:
-                        if idx < 5:
-                            hit_at_5 = True
-                        if idx < 10:
-                            hit_at_10 = True
-                        if reciprocal_rank == 0.0:
-                            reciprocal_rank = 1.0 / (idx + 1)
-
-            # 2. Not-Found Gate check
-            is_unanswerable = (
-                (not search_res.is_found) or (not chunks) or (top_score < not_found_threshold)
-            )
+            # Not-found: trust the searcher's gate. Re-apply the score cutoff only
+            # when rerank produced calibrated 0-1 relevance scores.
+            is_unanswerable = (not search_res.is_found) or (not chunks)
+            if use_rerank and chunks and top_score < not_found_threshold:
+                is_unanswerable = True
 
             # 3. Context Expansion & Generation
             answer = ""
@@ -123,7 +135,7 @@ class Evaluator:
                 answer = "I cannot find sufficient information in the provided documents to answer this question."
             else:
                 if use_expansion:
-                    expansion_res = self.expander.expand(chunks, scope="demo")
+                    expansion_res = self.expander.expand(generation_chunks, scope="demo")
                     contexts_for_prompt = [
                         f"[{idx + 1}] {ctx.text}" for idx, ctx in enumerate(expansion_res.passages)
                     ]
@@ -139,7 +151,7 @@ class Evaluator:
                     ]
                 else:
                     contexts_for_prompt = [
-                        f"[{idx + 1}] {c.display_text}" for idx, c in enumerate(chunks)
+                        f"[{idx + 1}] {c.display_text}" for idx, c in enumerate(generation_chunks)
                     ]
                     sources = [
                         {
@@ -149,7 +161,7 @@ class Evaluator:
                             "snippet": c.display_text[:150],
                             "score": c.score,
                         }
-                        for idx, c in enumerate(chunks)
+                        for idx, c in enumerate(generation_chunks)
                     ]
 
                 # Generate Answer via LLM (or mock deterministic synthesizer)
@@ -162,7 +174,7 @@ class Evaluator:
                     answer = llm_res.content
                     tokens_used = llm_res.prompt_tokens + llm_res.completion_tokens
                 else:
-                    best_match = chunks[0].display_text if chunks else ""
+                    best_match = generation_chunks[0].display_text if generation_chunks else ""
                     answer = f"Based on the documents [1], {best_match[:180]}."
                     tokens_used = len(answer.split()) + 40
 
@@ -312,6 +324,7 @@ class Evaluator:
         output_dir: Path = DEFAULT_RESULTS_DIR,
     ) -> tuple[Path, Path]:
         """Write JSON metrics and formatted Markdown report to output directory."""
+        output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         json_path = output_dir / "metrics.json"

@@ -34,6 +34,10 @@ class ChunkingConfig(BaseModel):
     )
     prefix_max_tokens: int = Field(default=60, description="Cap on heading breadcrumb tokens")
     window_neighbors: int = Field(default=1, description="Adjacent child window count")
+    use_heading_fusion: bool = Field(
+        default=True,
+        description="Prepend hierarchical breadcrumbs to embedding_text (semantic chunking)",
+    )
 
 
 class ParentChunk(BaseModel):

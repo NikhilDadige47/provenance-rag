@@ -88,6 +88,7 @@ class AblationConfig(BaseModel):
 
     name: str
     description: str
+    chunker: Literal["simple", "semantic"] = "semantic"
     use_dense: bool = True
     use_sparse: bool = True
     use_heading_fusion: bool = True

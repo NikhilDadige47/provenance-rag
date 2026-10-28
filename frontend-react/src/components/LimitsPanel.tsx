@@ -22,7 +22,7 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({ usage, scope }) => {
 
   return (
     <div className="space-y-5">
-      <div className="border border-border rounded-lg p-5 bg-card shadow-sm space-y-4">
+      <div className="border border-border rounded-lg p-5 surface-inset shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Gauge className="size-5 text-primary" />

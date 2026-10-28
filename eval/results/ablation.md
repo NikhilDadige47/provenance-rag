@@ -1,30 +1,22 @@
-# Provenance RAG: Architectural Ablation Study (Phase 7)
+# Provenance RAG: Retrieval Strategy Ablation
 
-Empirical benchmarking measuring the isolated impact of each component across the 50-query golden set benchmark.
+Empirical comparison of four retrieval techniques on the 50-query golden set. Simple and semantic configs use separate chunk indexes; hybrid and rerank reuse the semantic index.
 
-## 📊 Ablation Comparison Table
+## Ablation Comparison Table
 
 | # | Configuration | Recall@5 | Recall@10 | MRR | Faithfulness | Not-Found Acc | Latency (p95) |
 |---|---|---|---|---|---|---|---|
-| 1 | **Dense Vector Search Only (Cohere v3, No Rerank)** | `51.43%` | `51.43%` | `0.514` | `7.17%` | `13.33%` | `0.0ms` |
-| 2 | **Sparse BM25 Search Only (Local BM25, No Rerank)** | `51.43%` | `51.43%` | `0.514` | `7.17%` | `13.33%` | `0.0ms` |
-| 3 | **Hybrid Search (Dense + BM25, No Rerank)** | `51.43%` | `51.43%` | `0.514` | `7.17%` | `13.33%` | `0.0ms` |
-| 4 | **Hybrid Search + Heading Breadcrumb Fusion** | `51.43%` | `51.43%` | `0.514` | `7.17%` | `13.33%` | `0.0ms` |
-| 5 | **Full Production (Hybrid + Heading Fusion + Cohere Rerank v3.5 + Parent Expansion)** | `51.43%` | `51.43%` | `0.514` | `7.17%` | `13.33%` | `1.0ms` |
+| 1 | **Simple Chunking (Fixed-size Segments, Dense Vector Search, No Rerank)** | `60.0%` | `65.71%` | `0.378` | `16.33%` | `0.0%` | `1.0ms` |
+| 2 | **Semantic Chunking (Structure & Heading Aware, Dense Vector Search, No Rerank)** | `88.57%` | `91.43%` | `0.731` | `53.0%` | `0.0%` | `1.0ms` |
+| 3 | **Hybrid Search (Semantic Chunks + Dense Vector + BM25 Sparse, No Rerank)** | `91.43%` | `100.0%` | `0.753` | `55.0%` | `0.0%` | `1.4ms` |
+| 4 | **Reranking (Semantic Chunks + Hybrid Search + Lexical/Cohere Rerank + Parent Expansion)** | `100.0%` | `100.0%` | `0.971` | `88.67%` | `100.0%` | `4.4ms` |
 
-## 🔍 Senior Takeaways & Architectural Analysis
+## Senior Takeaways
 
-1. **Cohere Rerank v3.5 provides the largest single jump in MRR:**
-   Reranking moves the true ground-truth passage from lower candidate positions into rank #1,    increasing MRR from ~0.65 up to >0.85.
+1. **Best measured configuration:** `4_reranking` (MRR `0.971`, Recall@5 `100.0%`).
 
-2. **Hybrid Search rescues exact table and number lookups:**
-   Dense embeddings alone occasionally diffuse precise numbers ($75,000,000 vs $30,000,000).    Combining local BM25 ensures exact numerical and legal terminology hits are retrieved.
+2. **Weakest measured configuration:** `1_simple_chunking` (MRR `0.378`, Recall@5 `60.0%`).
 
-3. **Heading Breadcrumb Fusion disambiguates multi-section documents:**
-   Injecting hierarchical breadcrumbs (e.g., `Financial Performance > Revenue Breakdown`) directly into    `embedding_text` prevents generic subheadings from colliding across pages.
+3. **Semantic vs simple chunking:** Recall@5 delta is `28.57` points because heading-aware windows keep fiscal-year labels with the figures.
 
-4. **Not-Found Cost Guard stops 100% of unanswerable queries early:**
-   Setting a rerank threshold of 0.25 successfully intercepts out-of-domain questions,    saving owner generation costs ($0 spent on unanswerable LLM turns).
-
-5. **Parent Context Expansion provides complete narrative flow to the LLM:**
-   Children chunks pinpoint the location, but parent context delivers the surrounding paragraphs,    reducing hallucinations and elevating faithfulness scores above 90%.
+4. **Rerank vs hybrid:** MRR moves from `0.753` to `0.971`; not-found accuracy moves from `0.0%` to `100.0%` because the second-stage scorer down-ranks out-of-corpus terms.

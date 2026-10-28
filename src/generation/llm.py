@@ -30,6 +30,28 @@ DEFAULT_OUTPUT_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.1
 
 
+async def _iter_openai_sse(response: object) -> AsyncIterator[str]:
+    """Yield text deltas from an OpenAI-compatible SSE chat stream."""
+    async for line in response.aiter_lines():  # type: ignore[attr-defined]
+        line = line.strip()
+        if not line or not line.startswith("data: "):
+            continue
+        data_str = line[len("data: ") :].strip()
+        if data_str == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data_str)
+            choices = chunk.get("choices", [])
+            if not choices:
+                continue
+            delta = choices[0].get("delta", {})
+            content = delta.get("content", "")
+            if content:
+                yield content
+        except json.JSONDecodeError:
+            continue
+
+
 class GroqLLM(ILLM):
     """Groq API adapter (Default Owner LLM or Visitor BYOK)."""
 
@@ -87,23 +109,8 @@ class GroqLLM(ILLM):
             if response.status_code != 200:
                 raise ProviderUnavailableError(provider="groq", status_code=response.status_code)
 
-            async for line in response.aiter_lines():
-                line = line.strip()
-                if not line or not line.startswith("data: "):
-                    continue
-                data_str = line[len("data: ") :].strip()
-                if data_str == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data_str)
-                    choices = chunk.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                except json.JSONDecodeError:
-                    continue
+            async for content in _iter_openai_sse(response):
+                yield content
 
 
 class OpenAILLM(ILLM):
@@ -162,23 +169,8 @@ class OpenAILLM(ILLM):
             if response.status_code != 200:
                 raise ProviderUnavailableError(provider="openai", status_code=response.status_code)
 
-            async for line in response.aiter_lines():
-                line = line.strip()
-                if not line or not line.startswith("data: "):
-                    continue
-                data_str = line[len("data: ") :].strip()
-                if data_str == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data_str)
-                    choices = chunk.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                except json.JSONDecodeError:
-                    continue
+            async for content in _iter_openai_sse(response):
+                yield content
 
 
 class AnthropicLLM(ILLM):
@@ -257,27 +249,165 @@ class AnthropicLLM(ILLM):
                     continue
 
 
+class MistralLLM(ILLM):
+    """Mistral API adapter for visitor BYOK keys (OpenAI-compatible chat completions)."""
+
+    def __init__(
+        self,
+        api_key: Secret | None = None,
+        model: str = "mistral-small-latest",
+        is_visitor_key: bool = True,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._is_visitor_key = is_visitor_key
+        self._http_client = SecureHttpClient.create_async_client()
+
+    @property
+    def provider_name(self) -> str:
+        return "mistral"
+
+    async def generate_stream(
+        self, prompt: str, api_key: Secret | None = None, model: str | None = None
+    ) -> AsyncIterator[str]:
+        """Stream generated response tokens from Mistral."""
+        active_key = api_key or self._api_key
+        active_model = model or self._model
+
+        if not active_key or not active_key.reveal():
+            raise InvalidKeyError(provider="mistral", is_visitor_key=self._is_visitor_key)
+
+        headers = {
+            "Authorization": f"Bearer {active_key.reveal()}",
+            "Content-Type": "application/json",
+            "User-Agent": "ProvenanceRAG/1.0",
+        }
+        payload = {
+            "model": active_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": DEFAULT_OUTPUT_TOKENS,
+            "temperature": DEFAULT_TEMPERATURE,
+            "stream": True,
+        }
+
+        async with self._http_client.stream(
+            "POST",
+            "https://api.mistral.ai/v1/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=30.0,
+        ) as response:
+            if response.status_code in (401, 403):
+                raise InvalidKeyError(provider="mistral", is_visitor_key=self._is_visitor_key)
+            if response.status_code == 429:
+                raise QuotaExhaustedError(provider="mistral", is_visitor_key=self._is_visitor_key)
+            if response.status_code != 200:
+                raise ProviderUnavailableError(provider="mistral", status_code=response.status_code)
+            async for content in _iter_openai_sse(response):
+                yield content
+
+
+class GeminiLLM(ILLM):
+    """Google Gemini adapter for visitor BYOK keys."""
+
+    def __init__(
+        self,
+        api_key: Secret | None = None,
+        model: str = "gemini-1.5-flash-latest",
+        is_visitor_key: bool = True,
+    ) -> None:
+        self._api_key = api_key
+        self._model = (model or "gemini-1.5-flash-latest").removeprefix("models/")
+        self._is_visitor_key = is_visitor_key
+        self._http_client = SecureHttpClient.create_async_client()
+
+    @property
+    def provider_name(self) -> str:
+        return "gemini"
+
+    async def generate_stream(
+        self, prompt: str, api_key: Secret | None = None, model: str | None = None
+    ) -> AsyncIterator[str]:
+        """Stream generated response tokens from Gemini generateContent SSE."""
+        active_key = api_key or self._api_key
+        active_model = (model or self._model).removeprefix("models/")
+
+        if not active_key or not active_key.reveal():
+            raise InvalidKeyError(provider="gemini", is_visitor_key=self._is_visitor_key)
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{active_model}:streamGenerateContent?alt=sse&key={active_key.reveal()}"
+        )
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "maxOutputTokens": DEFAULT_OUTPUT_TOKENS,
+                "temperature": DEFAULT_TEMPERATURE,
+            },
+        }
+
+        async with self._http_client.stream(
+            "POST",
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "ProvenanceRAG/1.0"},
+            timeout=30.0,
+        ) as response:
+            if response.status_code in (400, 401, 403):
+                raise InvalidKeyError(provider="gemini", is_visitor_key=self._is_visitor_key)
+            if response.status_code == 429:
+                raise QuotaExhaustedError(provider="gemini", is_visitor_key=self._is_visitor_key)
+            if response.status_code != 200:
+                raise ProviderUnavailableError(provider="gemini", status_code=response.status_code)
+
+            async for line in response.aiter_lines():
+                line = line.strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[len("data: ") :].strip()
+                try:
+                    chunk = json.loads(data_str)
+                    candidates = chunk.get("candidates", [])
+                    if not candidates:
+                        continue
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    for part in parts:
+                        text = part.get("text", "")
+                        if text:
+                            yield text
+                except json.JSONDecodeError:
+                    continue
+
+
+_BYOK_ADAPTERS: dict[str, tuple[type[ILLM], str]] = {
+    "openai": (OpenAILLM, "gpt-4o-mini"),
+    "anthropic": (AnthropicLLM, "claude-3-5-haiku-20241022"),
+    "groq": (GroqLLM, "llama-3.3-70b-versatile"),
+    "mistral": (MistralLLM, "mistral-small-latest"),
+    "gemini": (GeminiLLM, "gemini-1.5-flash-latest"),
+}
+
+
 def get_llm_adapter(
     provider: str | None = None,
     api_key: Secret | None = None,
     model: str | None = None,
 ) -> ILLM:
-    """Factory creating the appropriate ILLM instance based on visitor vs owner credentials."""
-    # If visitor provides a valid key, instantiate the corresponding BYOK adapter
+    """Factory: visitor key + provider + model, else owner Groq default."""
     if api_key and bool(api_key.reveal()):
-        provider_norm = (provider or "openai").lower()
-        if provider_norm == "openai":
-            return OpenAILLM(api_key=api_key, model=model or "gpt-4o-mini", is_visitor_key=True)
-        elif provider_norm == "anthropic":
-            return AnthropicLLM(
-                api_key=api_key, model=model or "claude-3-5-haiku-20241022", is_visitor_key=True
+        provider_norm = (provider or "openai").strip().lower()
+        spec = _BYOK_ADAPTERS.get(provider_norm)
+        if spec is None:
+            supported = ", ".join(sorted(_BYOK_ADAPTERS))
+            raise ValueError(
+                f"Unsupported BYOK LLM provider '{provider_norm}'. Choose one of: {supported}."
             )
-        elif provider_norm == "groq":
-            return GroqLLM(
-                api_key=api_key, model=model or "llama-3.3-70b-versatile", is_visitor_key=True
-            )
-        else:
-            raise ValueError(f"Unsupported BYOK LLM provider '{provider_norm}'.")
+        adapter_cls, default_model = spec
+        return adapter_cls(
+            api_key=api_key,
+            model=(model or default_model).strip() or default_model,
+            is_visitor_key=True,
+        )
 
-    # Fallback to Owner Default LLM (Groq)
     return GroqLLM(is_visitor_key=False)

@@ -19,8 +19,10 @@ Privacy: question text, document text, and API keys are NEVER written to logs.
 Only metadata (request_id, tier, timings, counts) is logged.
 """
 
+import json
 import logging
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -41,7 +43,7 @@ from src.api.logging import (
     log_chat_response,
 )
 from src.api.sessions import CurrentSession, VisitorLLMKeys
-from src.generation.citations import audit_citations
+from src.generation.citations import audit_citations, normalize_citation_markers
 from src.generation.llm import get_llm_adapter
 from src.generation.prompt import build_generation_prompt, validate_question
 from src.generation.rewrite import rewrite_query_if_needed
@@ -57,50 +59,109 @@ router = APIRouter()
 
 # ---------------------------------------------------------------------------
 # Example questions for the demo corpus (Tier A / GET /examples)
+# Prefer eval/golden_set.jsonl so UI chips match the live eval set.
 # ---------------------------------------------------------------------------
 
-DEMO_EXAMPLES: list[dict[str, str]] = [
+_ROOT = Path(__file__).resolve().parents[2]
+_GOLDEN_SET_PATH = _ROOT / "eval" / "golden_set.jsonl"
+_DEMO_QUESTIONS_PATH = _ROOT / "demo_corpus" / "example_questions.json"
+
+_FALLBACK_DEMO_EXAMPLES: list[dict[str, str]] = [
     {
-        "id": "ex_1",
-        "question": "What was Acme Corporation's total consolidated revenue in FY2025?",
-        "category": "finance",
+        "id": "q1",
+        "question": "What was Apple's total net sales in fiscal year 2023?",
+        "category": "fy2023",
     },
     {
-        "id": "ex_2",
-        "question": "Which freedoms are explicitly protected under the First Amendment?",
-        "category": "constitutional_law",
+        "id": "q2",
+        "question": "What was Apple's total net sales in fiscal year 2024?",
+        "category": "fy2024",
     },
     {
-        "id": "ex_3",
-        "question": "How much revenue did Enterprise Cloud services contribute to Acme in 2025?",
-        "category": "finance",
+        "id": "q3",
+        "question": "What was Apple's total net sales in fiscal year 2025?",
+        "category": "fy2025",
     },
     {
-        "id": "ex_4",
-        "question": "What protection is guaranteed by the Fourth Amendment?",
-        "category": "constitutional_law",
+        "id": "q9",
+        "question": "What was Apple's total copper mining revenue on Mars?",
+        "category": "not_found",
     },
     {
-        "id": "ex_5",
-        "question": "By what percentage did Acme's operating expenses decrease?",
-        "category": "finance",
-    },
-    {
-        "id": "ex_6",
-        "question": "Where are legislative powers vested according to Article I of the Constitution?",
-        "category": "constitutional_law",
-    },
-    {
-        "id": "ex_7",
-        "question": "What is Acme Corporation's debt-to-equity ratio?",
-        "category": "finance",
-    },
-    {
-        "id": "ex_8",
-        "question": "What is the primary purpose stated in the Preamble of the US Constitution?",
-        "category": "constitutional_law",
+        "id": "q10",
+        "question": "How many supersonic passenger jets did Apple deliver in 2023?",
+        "category": "not_found",
     },
 ]
+
+
+def _category_from_example(item: dict) -> str:
+    doc = str(item.get("document") or "")
+    digits = "".join(ch for ch in doc if ch.isdigit())
+    if len(digits) >= 4:
+        return f"fy{digits[-4:]}"
+    if not doc:
+        return "not_found"
+    return "finance"
+
+
+def _load_golden_examples() -> list[dict[str, str]]:
+    try:
+        lines = _GOLDEN_SET_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    examples: list[dict[str, str]] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question") or "").strip()
+        if not question:
+            continue
+        examples.append(
+            {
+                "id": str(item.get("id") or f"ex_{len(examples) + 1}"),
+                "question": question,
+                "category": str(item.get("category") or "demo"),
+            }
+        )
+    return examples
+
+
+def _load_demo_examples() -> list[dict[str, str]]:
+    golden = _load_golden_examples()
+    if golden:
+        return golden
+    try:
+        raw = json.loads(_DEMO_QUESTIONS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return list(_FALLBACK_DEMO_EXAMPLES)
+    if not isinstance(raw, list):
+        return list(_FALLBACK_DEMO_EXAMPLES)
+    examples: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        chip = str(item.get("chip") or item.get("question") or "").strip()
+        if not chip:
+            continue
+        examples.append(
+            {
+                "id": str(item.get("id") or f"ex_{len(examples) + 1}"),
+                "question": chip,
+                "category": _category_from_example(item),
+            }
+        )
+    return examples or list(_FALLBACK_DEMO_EXAMPLES)
+
+
+DEMO_EXAMPLES: list[dict[str, str]] = _load_demo_examples()
 
 # ---------------------------------------------------------------------------
 # Request / Response schemas
@@ -150,6 +211,7 @@ class ChatResponse(BaseModel):
     is_grounded: bool
     used_visitor_key: bool
     timings_ms: dict[str, float]
+    model_used: str | None = None
     # Never included: session_id, scope, API keys, full document text
 
 
@@ -167,6 +229,8 @@ class UsageResponse(BaseModel):
     rerank_calls_max: int
     at_capacity: bool
     session_expires_at: str
+    owner_llm_provider: str
+    owner_llm_model: str
 
 
 class ExamplesResponse(BaseModel):
@@ -174,6 +238,20 @@ class ExamplesResponse(BaseModel):
 
     examples: list[dict[str, str]]
     corpus: str = "provenance_rag_demo"
+
+
+def _dedupe_source_cards(cards: list[SourceCard]) -> list[SourceCard]:
+    """Drop source chips that repeat the same document snippet."""
+    unique: list[SourceCard] = []
+    seen: set[tuple[str, int, str]] = set()
+    for card in cards:
+        snippet_key = " ".join(card.snippet.lower().split())[:120]
+        key = (card.title.strip().lower(), card.page, snippet_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(card)
+    return unique
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +325,8 @@ async def get_usage(
         rerank_calls_max=rerank_max,
         at_capacity=at_capacity,
         session_expires_at=session.expires_at,
+        owner_llm_provider=cfg.default_llm_provider,
+        owner_llm_model=cfg.default_llm_model,
     )
 
 
@@ -339,6 +419,7 @@ async def chat(
             api_key=llm_secret,
             model=visitor_keys.llm_model if using_visitor_key else None,
         )
+        model_used = f"{llm.provider_name}/{getattr(llm, '_model', '')}".rstrip("/")
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -401,11 +482,12 @@ async def chat(
             is_grounded=False,
             used_visitor_key=using_visitor_key,
             timings_ms=timings,
+            model_used=model_used,
         )
 
     # ── Step 3: Parent / window context expansion ───────────────────────────
     t0 = time.time()
-    expander = ContextExpander()
+    expander = ContextExpander(db=db)
     expansion_res = expander.expand(chunks=search_result.chunks, scope=scope)
     timings["expansion_ms"] = round((time.time() - t0) * 1000, 1)
 
@@ -442,7 +524,7 @@ async def chat(
         ]
 
     timings["generation_ms"] = round((time.time() - t0) * 1000, 1)
-    full_answer = "".join(answer_tokens).strip()
+    full_answer = normalize_citation_markers("".join(answer_tokens).strip())
 
     # Rough token estimate: ~1 token per 4 characters
     estimated_tokens = max(1, len(full_answer) // 4)
@@ -460,7 +542,7 @@ async def chat(
 
     # ── Build source cards ──────────────────────────────────────────────────
     if audit_res.sources:
-        sources = [
+        raw_sources = [
             SourceCard(
                 citation=f"[{s.citation_index}]",
                 title=s.title,
@@ -471,16 +553,17 @@ async def chat(
             for s in audit_res.sources
         ]
     else:
-        sources = [
+        raw_sources = [
             SourceCard(
                 citation=f"[{idx}]",
                 title=p.title,
                 page=p.page,
                 breadcrumb=p.breadcrumb,
-                snippet=p.text[:200] + ("..." if len(p.text) > 200 else ""),
+                snippet=p.text,
             )
             for idx, p in enumerate(expansion_res.passages, start=1)
         ]
+    sources = _dedupe_source_cards(raw_sources)
 
     # ── Increment IP daily counter (only after successful generation) ───────
     increment_ip_daily_questions(client_ip)
@@ -507,4 +590,5 @@ async def chat(
         is_grounded=audit_res.is_grounded,
         used_visitor_key=using_visitor_key,
         timings_ms=timings,
+        model_used=model_used,
     )

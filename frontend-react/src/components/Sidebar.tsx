@@ -19,7 +19,7 @@ interface SidebarProps {
   onUploadSuccess: () => void;
   onRequestDelete: () => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
-  onKeyConfigChange: (cfg: LLMConfig) => void;
+  onKeyConfigChange: (cfg: LLMConfig | null) => void;
   onAskExample: (q: string) => void;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;

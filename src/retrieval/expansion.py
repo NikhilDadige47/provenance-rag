@@ -84,6 +84,7 @@ class ContextExpander:
         expanded_passages: list[ExpandedContextPassage] = []
         seen_parent_ids: set[str] = set()
         seen_chunk_ids: set[str] = set()
+        seen_text_keys: set[str] = set()
         current_token_count = 0
         budget_exhausted = False
 
@@ -134,6 +135,9 @@ class ContextExpander:
                     expanded_passages.append(passage)
                     seen_parent_ids.add(parent_id)
                     seen_chunk_ids.add(chunk.chunk_id)
+                    parent_key = " ".join(parent_text.lower().split())[:160]
+                    if parent_key:
+                        seen_text_keys.add(parent_key)
                     current_token_count += tokens_to_add
                     continue
 
@@ -143,6 +147,10 @@ class ContextExpander:
                 or getattr(chunk, "display_text", None)
                 or getattr(chunk, "embedding_text", "")
             )
+            text_key = " ".join(str(child_text).lower().split())[:160]
+            if text_key and text_key in seen_text_keys:
+                seen_chunk_ids.add(chunk.chunk_id)
+                continue
             tokens_to_add = estimate_tokens(child_text)
 
             if current_token_count + tokens_to_add > active_budget:
@@ -162,6 +170,8 @@ class ContextExpander:
             )
             expanded_passages.append(passage)
             seen_chunk_ids.add(chunk.chunk_id)
+            if text_key:
+                seen_text_keys.add(text_key)
             current_token_count += tokens_to_add
 
         return ExpansionResult(

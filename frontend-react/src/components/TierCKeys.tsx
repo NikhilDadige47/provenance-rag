@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Key,
-  CheckCircle2,
+  Check,
   AlertTriangle,
   Eye,
   EyeOff,
   Loader2,
-  Sparkles,
   Cpu,
   Edit3,
 } from 'lucide-react';
@@ -34,7 +32,7 @@ const SUITABLE_MODELS: Record<string, ModelItem[]> = {
     { id: 'llama-3.1-70b-versatile', label: 'Llama 3.1 70B Versatile', desc: '128k context, high quality' },
     { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant', desc: 'Ultra-low latency, 128k context' },
     { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B', desc: 'Advanced reasoning and mathematical synthesis' },
-    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B (32k)', desc: 'Mixture-of-Experts high throughput' },
+    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B 32k', desc: 'Mixture-of-Experts high throughput' },
     { id: 'gemma2-9b-it', label: 'Google Gemma 2 9B IT', desc: 'Google lightweight high-efficiency instruction model' },
     { id: 'qwen-2.5-32b', label: 'Qwen 2.5 32B', desc: 'Strong multilingual and technical coding reasoning' },
   ],
@@ -53,7 +51,7 @@ const SUITABLE_MODELS: Record<string, ModelItem[]> = {
   gemini: [
     { id: 'gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash', desc: 'Ultra-fast multi-turn conversational speed' },
     { id: 'gemini-1.5-pro-latest', label: 'Gemini 1.5 Pro', desc: '1-million token context window' },
-    { id: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Experimental)', desc: 'Next-gen real-time intelligence' },
+    { id: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash Experimental', desc: 'Next-gen real-time intelligence' },
   ],
   mistral: [
     { id: 'mistral-small-latest', label: 'Mistral Small', desc: 'Cost-effective high precision' },
@@ -80,6 +78,12 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
   const [liveModels, setLiveModels] = useState<string[]>([]);
 
   const suitableList = SUITABLE_MODELS[provider] || [];
+
+  useEffect(() => {
+    onKeyConfigChange({ provider, model, key });
+    // Push the currently selected provider/model into the chat header on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleProviderChange = (p: any) => {
     setProvider(p);
@@ -167,20 +171,16 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
   return (
     <div className="space-y-4">
       {/* Key Config Card */}
-      <div className="border border-border rounded-lg p-5 bg-card shadow-sm space-y-4">
+      <div className="border border-border rounded-lg p-5 surface-inset shadow-sm space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Key className="size-5 text-amber-500" />
-            <h3 className="font-semibold text-base">Bring Your Own LLM Key</h3>
-          </div>
+          <h3 className="font-semibold text-base">Bring Your Own LLM Key</h3>
           <span className="text-xs font-mono bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full">
             Unlimited BYOK Queries
           </span>
         </div>
 
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Provide your personal LLM API key to unlock unlimited queries beyond the owner quota.
-          <strong> Privacy Promise:</strong> Your key is held strictly in volatile RAM for the request duration and is never persisted to disk or databases.
+        <p className="text-xs text-muted-foreground">
+          Provide your personal key for unlimited queries. Held in volatile RAM only; never persisted to disk.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
@@ -194,11 +194,11 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
               onChange={(e) => handleProviderChange(e.target.value)}
               className="w-full h-9 text-xs px-2.5 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="groq">Groq Cloud (Fastest / Ultra-Low Latency)</option>
-              <option value="openai">OpenAI (GPT-4o / GPT-4o-mini)</option>
-              <option value="anthropic">Anthropic (Claude 3.5)</option>
-              <option value="gemini">Google Gemini (Flash / Pro)</option>
-              <option value="mistral">Mistral AI</option>
+              <option value="groq">Groq</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Claude</option>
+              <option value="gemini">Gemini</option>
+              <option value="mistral">Mistral</option>
             </select>
           </div>
 
@@ -219,14 +219,14 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
             <select
               value={isCustomModel ? '__custom__' : model}
               onChange={(e) => handleModelSelect(e.target.value)}
-              className="w-full h-9 text-xs font-mono px-2.5 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full h-9 text-xs px-2.5 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {/* If verified live models were discovered */}
               {liveModels.length > 0 && (
                 <optgroup label={`Verified Live on ${provider.toUpperCase()}`}>
                   {liveModels.map((m) => (
                     <option key={`live-${m}`} value={m}>
-                      ✓ {m}
+                      {m}
                     </option>
                   ))}
                 </optgroup>
@@ -236,14 +236,14 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
               <optgroup label={`Suitable Models for ${provider.toUpperCase()}`}>
                 {suitableList.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label} ({item.id})
+                    {item.label}
                   </option>
                 ))}
               </optgroup>
 
               {/* Custom Model Option */}
               <optgroup label="Custom Specification">
-                <option value="__custom__">Custom Model Identifier...</option>
+                <option value="__custom__">Custom</option>
               </optgroup>
             </select>
           </div>
@@ -271,60 +271,53 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
 
         {/* Key Input & Verification */}
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold">API Secret Key</label>
-            <button
-              type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-            >
-              {showKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-              <span>{showKey ? 'Hide' : 'Reveal'}</span>
-            </button>
-          </div>
+          <label className="text-xs font-semibold block">API Secret Key</label>
           <div className="flex gap-2">
-            <input
-              type={showKey ? 'text' : 'password'}
-              placeholder={provider === 'groq' ? 'gsk_...' : 'sk-...'}
-              value={key}
-              onChange={(e) => handleKeyChange(e.target.value)}
-              className="flex-1 text-xs font-mono p-2 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+            <div className="relative flex-1">
+              <input
+                type={showKey ? 'text' : 'password'}
+                placeholder={provider === 'groq' ? 'gsk_...' : 'sk-...'}
+                value={key}
+                onChange={(e) => handleKeyChange(e.target.value)}
+                className="w-full text-xs font-mono p-2 pr-8 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                aria-label={showKey ? 'Hide API key' : 'Show API key'}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-0.5"
+              >
+                {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              </button>
+            </div>
             <Button
               variant="outline"
               size="sm"
               onClick={handleTestKey}
-              disabled={isTesting || !key.trim()}
-              className="h-9 gap-1.5 shrink-0"
+              disabled={isTesting || !key.trim() || testResult?.success === true}
+              className={`h-9 min-w-[5.5rem] gap-1.5 shrink-0 ${
+                testResult?.success
+                  ? 'text-emerald-600 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/10 hover:text-emerald-600'
+                  : ''
+              }`}
             >
               {isTesting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : testResult?.success ? (
                 <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  <span>Verifying...</span>
+                  <Check className="size-3.5" strokeWidth={2.5} />
+                  <span>Verified</span>
                 </>
               ) : (
-                <>
-                  <Sparkles className="size-3.5 text-primary" />
-                  <span>Verify Key</span>
-                </>
+                <span>Verify</span>
               )}
             </Button>
           </div>
         </div>
 
-        {testResult && (
-          <div
-            className={`p-2.5 rounded-md text-xs flex items-center gap-2 ${
-              testResult.success
-                ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
-                : 'bg-destructive/10 text-destructive border border-destructive/20'
-            }`}
-          >
-            {testResult.success ? (
-              <CheckCircle2 className="size-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="size-4 shrink-0" />
-            )}
+        {testResult && !testResult.success && (
+          <div className="p-2.5 rounded-md text-xs flex items-center gap-2 bg-destructive/10 text-destructive border border-destructive/20">
+            <AlertTriangle className="size-4 shrink-0" />
             <span>{testResult.message}</span>
           </div>
         )}

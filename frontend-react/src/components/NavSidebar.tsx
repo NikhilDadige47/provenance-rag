@@ -6,7 +6,6 @@ import {
   Gauge,
   Moon,
   Sun,
-  Database,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -20,7 +19,6 @@ interface NavSidebarProps {
   onSelectNav: (item: NavItem) => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
-  documentCount: number;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -30,7 +28,6 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
   onSelectNav,
   theme,
   onToggleTheme,
-  documentCount,
   isCollapsed: controlledCollapsed,
   onToggleCollapse,
 }) => {
@@ -64,13 +61,13 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
 
   return (
     <aside
-      className={`border-r border-border bg-card flex flex-col h-screen shrink-0 transition-[width] duration-200 ease-out select-none relative ${
+      className={`border-r border-border surface-panel flex flex-col h-full shrink-0 transition-[width] duration-200 ease-out select-none relative ${
         isCollapsed ? 'w-[72px]' : 'w-56'
       }`}
     >
       {/* Brand Header */}
       <div
-        className={`h-16 px-3 flex items-center shrink-0 ${
+        className={`h-16 px-3 flex items-center shrink-0 surface-header ${
           isCollapsed ? 'justify-center' : 'justify-between'
         }`}
       >
@@ -150,19 +147,6 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
         })}
       </div>
 
-      {/* Sidebar Footer */}
-      <div className="p-2.5 border-t border-border bg-card/60 shrink-0">
-        <div
-          className={`flex items-center text-xs text-muted-foreground ${
-            isCollapsed ? 'justify-center' : 'px-1'
-          }`}
-        >
-          <span className="flex items-center gap-1.5 font-mono text-[11px]" title={`${documentCount} total docs indexed`}>
-            <Database className="size-3.5 shrink-0" />
-            {!isCollapsed && <span>{documentCount} docs</span>}
-          </span>
-        </div>
-      </div>
     </aside>
   );
 };

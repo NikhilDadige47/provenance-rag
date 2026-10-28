@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavSidebar, NavItem } from './components/NavSidebar';
 import { SectionDetails } from './components/SectionDetails';
 import { ChatContainer } from './components/ChatContainer';
+import { SectionFooter } from './components/SectionFooter';
 import { DeleteModal } from './components/DeleteModal';
+import { Database } from 'lucide-react';
 import { Toast, ToastMessage } from './components/Toast';
 import { AccessTier, UsageInfo, ExampleQuestion, UploadedDoc, LLMConfig } from './types';
 import { api } from './lib/api';
@@ -26,6 +28,9 @@ export function App() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isIngesting, setIsIngesting] = useState(false);
   const [activeDocName, setActiveDocName] = useState<string>('');
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
+  const [queuedNonce, setQueuedNonce] = useState(0);
+  const [visitorLlm, setVisitorLlm] = useState<LLMConfig | null>(null);
 
   // Nav sidebar collapse state
   const [isNavCollapsed, setIsNavCollapsed] = useState<boolean>(false);
@@ -162,11 +167,8 @@ export function App() {
   };
 
   const handleAskExample = (q: string) => {
-    const inputEl = document.querySelector('input[placeholder*="Ask a question"]') as HTMLInputElement;
-    if (inputEl) {
-      inputEl.value = q;
-      inputEl.focus();
-    }
+    setQueuedQuestion(q);
+    setQueuedNonce((n) => n + 1);
   };
 
   // Resizable divider drag handlers
@@ -208,75 +210,94 @@ export function App() {
     localStorage.removeItem('provenance_middle_width');
   };
 
+  const indexedDocCount = documents.length + 3;
+
   return (
-    <div className="h-screen w-screen flex overflow-hidden bg-background text-foreground transition-colors select-none">
-      {/* SECTION 1: Nav Sidebar Menu with Collapse Control */}
-      <NavSidebar
-        activeNav={activeNav}
-        onSelectNav={(item) => {
-          setActiveNav(item);
-          if (item === 'tier_a' || item === 'tier_b') {
-            handleSelectTier(item);
-          }
-        }}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        documentCount={documents.length + 3}
-        isCollapsed={isNavCollapsed}
-        onToggleCollapse={() => setIsNavCollapsed((prev) => !prev)}
-      />
+    <div className="h-screen w-screen flex flex-col overflow-hidden surface-shell text-foreground transition-colors select-none">
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* SECTION 1: Nav Sidebar Menu with Collapse Control */}
+        <NavSidebar
+          activeNav={activeNav}
+          onSelectNav={(item) => {
+            setActiveNav(item);
+            if (item === 'tier_a' || item === 'tier_b') {
+              handleSelectTier(item);
+            }
+          }}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          isCollapsed={isNavCollapsed}
+          onToggleCollapse={() => setIsNavCollapsed((prev) => !prev)}
+        />
 
-      {/* SECTION 2: Details Panel for Selected Menu Item (Equally divided 50/50 by default) */}
-      <SectionDetails
-        activeNav={activeNav}
-        usage={usage}
-        scope={scope}
-        documents={documents}
-        onUploadSuccess={() => {
-          refreshDocuments();
-          refreshUsage();
-        }}
-        onRequestDelete={() => setShowDeleteModal(true)}
-        onToast={addToast}
-        onKeyConfigChange={(cfg: LLMConfig) => {
-          api.setVisitorKeys(cfg);
-        }}
-        onAskExample={handleAskExample}
-        width={effectiveMiddleWidth}
-        isDragging={isDragging}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onIngestStateChange={(ingesting, docName) => {
-          setIsIngesting(ingesting);
-          if (docName) setActiveDocName(docName);
-        }}
-      />
+        {/* SECTION 2: Details Panel for Selected Menu Item (Equally divided 50/50 by default) */}
+        <SectionDetails
+          activeNav={activeNav}
+          usage={usage}
+          scope={scope}
+          documents={documents}
+          onUploadSuccess={() => {
+            refreshDocuments();
+            refreshUsage();
+          }}
+          onRequestDelete={() => setShowDeleteModal(true)}
+          onToast={addToast}
+          onKeyConfigChange={(cfg: LLMConfig | null) => {
+            api.setVisitorKeys(cfg);
+            setVisitorLlm(cfg);
+          }}
+          onAskExample={handleAskExample}
+          exampleChips={exampleChips}
+          width={effectiveMiddleWidth}
+          isDragging={isDragging}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onIngestStateChange={(ingesting, docName) => {
+            setIsIngesting(ingesting);
+            if (docName) setActiveDocName(docName);
+          }}
+        />
 
-      {/* INTERACTIVE RESIZABLE DIVIDER LINE (Between Section 2 and Section 3) */}
-      <div
-        onMouseDown={handleMouseDownDivider}
-        onDoubleClick={handleResetDivider}
-        className="w-2 hover:w-2.5 bg-transparent hover:bg-primary/30 active:bg-primary/60 transition-all cursor-col-resize h-screen shrink-0 relative flex items-center justify-center group select-none z-20"
-        title="Drag to resize middle section & chatbox • Double-click to reset to default 50/50 split"
-      >
-        <div className="w-[1px] h-full bg-border group-hover:bg-primary transition-colors" />
-        <div className="absolute size-4 rounded-full bg-card border border-border shadow-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <div className="w-1.5 h-2 border-x border-muted-foreground/60" />
+        {/* INTERACTIVE RESIZABLE DIVIDER LINE (Between Section 2 and Section 3) */}
+        <div
+          onMouseDown={handleMouseDownDivider}
+          onDoubleClick={handleResetDivider}
+          className="w-2 hover:w-2.5 h-full shrink-0 bg-transparent hover:bg-primary/30 active:bg-primary/60 transition-all cursor-col-resize relative flex items-center justify-center group select-none z-20"
+          title="Drag to resize middle section & chatbox • Double-click to reset to default 50/50 split"
+        >
+          <div className="w-[1px] h-full bg-border group-hover:bg-primary transition-colors" />
+          <div className="absolute size-4 rounded-full bg-card border border-border shadow-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <div className="w-1.5 h-2 border-x border-muted-foreground/60" />
+          </div>
         </div>
+
+        {/* SECTION 3: Primary Chatbox Canvas (Equally divided 50/50 by default, attached to borders) */}
+        <main className="flex-1 basis-0 min-w-[400px] flex flex-col h-full overflow-hidden">
+          <ChatContainer
+            scope={scope}
+            exampleChips={exampleChips}
+            queuedQuestion={queuedQuestion}
+            queuedNonce={queuedNonce}
+            onUsageUpdate={refreshUsage}
+            onToast={addToast}
+            isIngesting={isIngesting}
+            documentCount={documents.length}
+            activeDocName={activeDocName || documents[0]?.filename}
+            llmProvider={visitorLlm ? visitorLlm.provider : usage?.owner_llm_provider}
+            llmModel={visitorLlm ? visitorLlm.model : usage?.owner_llm_model}
+          />
+        </main>
       </div>
 
-      {/* SECTION 3: Primary Chatbox Canvas (Equally divided 50/50 by default, attached to borders) */}
-      <main className="flex-1 basis-0 min-w-[400px] flex flex-col h-screen overflow-hidden">
-        <ChatContainer
-          scope={scope}
-          exampleChips={exampleChips}
-          onUsageUpdate={refreshUsage}
-          onToast={addToast}
-          isIngesting={isIngesting}
-          documentCount={documents.length}
-          activeDocName={activeDocName || documents[0]?.filename}
-        />
-      </main>
+      <SectionFooter>
+        <span
+          className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground"
+          title={`${indexedDocCount} total docs indexed`}
+        >
+          <Database className="size-3 shrink-0" />
+          <span>{indexedDocCount} docs</span>
+        </span>
+      </SectionFooter>
 
       {/* Delete Confirmation Modal */}
       <DeleteModal

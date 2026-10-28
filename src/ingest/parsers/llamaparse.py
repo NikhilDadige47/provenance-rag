@@ -21,6 +21,7 @@ from src.security.errors import (
     InvalidKeyError,
     KeySecurityError,
     ProviderTimeoutError,
+    QuotaExhaustedError,
     RateLimitedError,
 )
 from src.security.secret import Secret
@@ -223,6 +224,8 @@ class LlamaParseAdapter(IParser):
 
                 if upload_resp.status_code in {401, 403}:
                     raise InvalidKeyError(provider=self.name, is_visitor_key=True)
+                if upload_resp.status_code == 402:
+                    raise QuotaExhaustedError(provider=self.name, is_visitor_key=True)
                 if upload_resp.status_code == 429:
                     raise RateLimitedError(provider=self.name, is_visitor_key=True)
                 upload_resp.raise_for_status()

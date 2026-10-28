@@ -40,6 +40,12 @@ from src.api.upload_validation import (
     build_upload_estimate,
     validate_pdf_upload,
 )
+from src.ingest.parsers.selection import (
+    DEFAULT_UPLOAD_PARSER,
+    UploadParserError,
+    normalize_upload_parser,
+    visitor_parser_key_required,
+)
 from src.retrieval.store import QdrantVectorStore
 from src.security.config import OwnerConfig
 from src.security.secret import Secret
@@ -123,7 +129,10 @@ class DocumentMetadataResponse(BaseModel):
 async def validate_and_estimate_upload(
     request: Request,
     file: UploadFile = File(..., description="PDF document to inspect"),
-    parser: str = Form("local_pymupdf", description="Target parser name"),
+    parser: str = Form(
+        DEFAULT_UPLOAD_PARSER,
+        description="auto (owner waterfall), local_pymupdf, llamaparse, or landingai",
+    ),
     parser_key: str | None = Form(None, description="Optional parser API key"),
     session: SessionState = Depends(get_current_session),
     x_parser_key: str | None = Header(None, alias="X-Parser-Key"),
@@ -145,18 +154,23 @@ async def validate_and_estimate_upload(
         cfg=cfg,
     )
 
+    try:
+        parser_clean = normalize_upload_parser(parser)
+    except UploadParserError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     session_row = db.get_session(session.session_id) or {}
     estimate = build_upload_estimate(
         validation=validation,
-        parser_name=parser,
+        parser_name=parser_clean,
         session_row=session_row,
         cfg=cfg,
     )
 
-    # If visitor provided a parser key, pre-flight test it
+    # If visitor provided a parser key for a parser they must fund, pre-flight test it
     if effective_parser_key and estimate.requires_visitor_key:
         test_res = await verify_provider_connection(
-            provider=parser, key=Secret(effective_parser_key)
+            provider=parser_clean, key=Secret(effective_parser_key)
         )
         if not test_res.ok:
             estimate.can_proceed = False
@@ -172,13 +186,18 @@ async def validate_and_estimate_upload(
     summary="Submit PDF document for background ingestion",
     description=(
         "Validates PDF, creates a background ingestion job, and starts the processing pipeline. "
-        "The visitor's parser key (if supplied) is held in memory for this job only and shredded upon completion."
+        "Default parser=auto uses owner Landing AI credits, then LlamaParse, then local PyMuPDF. "
+        "A visitor parser key (if supplied for an explicit cloud parser) is held in memory "
+        "for this job only and shredded upon completion."
     ),
 )
 async def upload_document(
     request: Request,
     file: UploadFile = File(..., description="PDF file to ingest"),
-    parser: str = Form("local_pymupdf", description="local_pymupdf, llamaparse, or landingai"),
+    parser: str = Form(
+        DEFAULT_UPLOAD_PARSER,
+        description="auto (Landing AI → LlamaParse → local), local_pymupdf, llamaparse, or landingai",
+    ),
     parser_key: str | None = Form(None, description="Optional parser API key from form"),
     allow_fallback: bool = Form(
         True, description="Automatically re-parse locally if cloud parser fails"
@@ -215,14 +234,18 @@ async def upload_document(
         cfg=cfg,
     )
 
-    # 5. Check if parser requires a key that was not provided
-    parser_clean = parser.strip().lower()
-    if parser_clean in ("llamaparse", "landingai", "unstructured") and not effective_parser_key:
+    # 5. Resolve parser. auto = owner-paid waterfall, never requires a visitor key.
+    try:
+        parser_clean = normalize_upload_parser(parser)
+    except UploadParserError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if visitor_parser_key_required(parser_clean, cfg) and not effective_parser_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Parser '{parser}' requires an API key. Pass it in the X-Parser-Key header, "
-                "or choose the free local parser (local_pymupdf)."
+                f"Parser '{parser_clean}' requires an API key. Pass it in the X-Parser-Key header, "
+                "use parser=auto (owner-paid waterfall), or choose local_pymupdf."
             ),
         )
 
@@ -251,6 +274,7 @@ async def upload_document(
             parser_name=parser_clean,
             parser_key=effective_parser_key,
             allow_fallback=allow_fallback,
+            client_ip=client_ip,
         )
     )
 

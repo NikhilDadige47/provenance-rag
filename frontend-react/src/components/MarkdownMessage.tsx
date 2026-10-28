@@ -1,37 +1,34 @@
 import React from 'react';
+import { SourceCard } from '../types';
 
 interface MarkdownMessageProps {
   content: string;
+  sources?: SourceCard[];
+  onCitationClick?: (source: SourceCard) => void;
 }
 
-export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
-  const scrollToSource = (num: string) => {
-    window.dispatchEvent(new CustomEvent('open-source-card', { detail: { citation: num } }));
+const citationIndex = (source: SourceCard): string =>
+  source.citation.replace(/[\[\]【】]/g, '').trim();
 
-    const tryScroll = () => {
-      const card = document.getElementById(`source-card-${num}`);
-      const btn = document.getElementById(`source-btn-${num}`);
-      const el = card || btn;
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('ring-2', 'ring-primary', 'bg-primary/10');
-        setTimeout(() => el.classList.remove('ring-2', 'ring-primary', 'bg-primary/10'), 2500);
-        return true;
-      }
-      return false;
-    };
-
-    if (!tryScroll()) {
-      setTimeout(tryScroll, 70);
-      setTimeout(tryScroll, 180);
-      setTimeout(tryScroll, 350);
+export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
+  content,
+  sources = [],
+  onCitationClick,
+}) => {
+  const openCitation = (num: string) => {
+    const found = sources.find((src) => citationIndex(src) === num);
+    if (found && onCitationClick) {
+      onCitationClick(found);
+      return;
     }
+    window.dispatchEvent(new CustomEvent('open-source-card', { detail: { citation: num } }));
   };
 
   // Helper to parse inline tokens: citations [1], bold **text**, italic *text*, code `code`, and <br>
   const renderInline = (text: string): React.ReactNode => {
     // Regex splits text by: citations [1] or 【1】, bold **text**, italic *text*, code `code`, and <br> tags
-    const tokenRegex = /((?:\[|【)\s*\d+(?:\s*,\s*\d+)*\s*(?:\]|】)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|<br\s*\/?>)/gi;
+    const tokenRegex =
+      /((?:\[|【)\s*\d+(?:\s*,\s*\d+)*(?:\s*[†‡][^\]】]*)?\s*(?:\]|】)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|<br\s*\/?>)/gi;
     const parts = text.split(tokenRegex);
 
     return parts.map((part, idx) => {
@@ -42,10 +39,12 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
         return <br key={idx} />;
       }
 
-      // Citations like [1], 【1】, [1, 2], or 【1, 2】
-      const citationMatch = part.match(/^(?:\[|【)\s*(\d+(?:\s*,\s*\d+)*)\s*(?:\]|】)$/);
+      // Citations like [1], 【1】, [1, 2], or Groq footnotes 【1†L1-L4】
+      const citationMatch = part.match(
+        /^(?:\[|【)\s*(\d+(?:\s*,\s*\d+)*)(?:\s*[†‡][^\]】]*)?\s*(?:\]|】)$/
+      );
       if (citationMatch) {
-        const nums = citationMatch[1].split(',').map((n) => n.trim());
+        const nums = citationMatch[1].split(',').map((n) => n.trim()).filter(Boolean);
 
         // Find previous non-empty part to ensure space precedes citation
         let prevNonEmpty = '';
@@ -68,7 +67,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => 
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    scrollToSource(num);
+                    openCitation(num);
                   }}
                   style={{ color: 'var(--citation-blue, #2563eb)' }}
                   className="inline font-semibold text-[length:inherit] leading-inherit hover:underline cursor-pointer transition-colors select-none p-0 bg-transparent border-none mx-0.5 text-blue-600 dark:text-blue-400"

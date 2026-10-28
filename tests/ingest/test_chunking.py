@@ -205,3 +205,64 @@ def test_no_heading_doc_fixed_size_parents():
     parent_ids = {p.parent_id for p in result.parents}
     for c in result.children:
         assert c.parent_id in parent_ids
+
+
+def test_simple_chunker_does_not_fuse_headings():
+    """Fixed-size chunker packs reading order and leaves embedding_text unfused."""
+    from src.ingest.chunking.simple_chunker import SimpleChunker
+
+    doc = StructuredDoc(
+        doc_id="simple_doc",
+        title="Annual Report",
+        page_count=2,
+        parser_used="test",
+        blocks=[
+            Block(type=BlockType.HEADING, text="Revenue", level=1, page=1, order=0),
+            Block(
+                type=BlockType.PARAGRAPH,
+                text="Net sales were $100 million.",
+                page=1,
+                order=1,
+            ),
+            Block(type=BlockType.HEADING, text="Risks", level=1, page=2, order=2),
+            Block(
+                type=BlockType.PARAGRAPH,
+                text="Supply chain disruption remains a material risk.",
+                page=2,
+                order=3,
+            ),
+        ],
+    )
+    result = SimpleChunker().chunk(doc)
+    assert result.chunking_version == "simple-v1"
+    assert result.children
+    for child in result.children:
+        assert child.embedding_text == child.display_text
+        assert not child.embedding_text.startswith("[")
+
+
+def test_hybrid_chunker_heading_fusion_can_be_disabled():
+    """Semantic chunker prepends breadcrumbs unless heading fusion is turned off."""
+    from src.ingest.chunking.models import ChunkingConfig
+
+    doc = StructuredDoc(
+        doc_id="fusion_doc",
+        title="Annual Report",
+        page_count=1,
+        parser_used="test",
+        blocks=[
+            Block(type=BlockType.HEADING, text="Revenue", level=1, page=1, order=0),
+            Block(
+                type=BlockType.PARAGRAPH,
+                text="Net sales were $100 million.",
+                page=1,
+                order=1,
+            ),
+        ],
+    )
+    fused = HybridChunker(ChunkingConfig(use_heading_fusion=True)).chunk(doc)
+    plain = HybridChunker(ChunkingConfig(use_heading_fusion=False)).chunk(doc)
+    assert fused.children
+    assert fused.children[0].embedding_text.startswith("[")
+    assert "Net sales were $100 million." in fused.children[0].embedding_text
+    assert plain.children[0].embedding_text == plain.children[0].display_text

@@ -47,6 +47,17 @@ class TestDemoModeNoAuth:
         resp = client.get("/examples")
         assert resp.json()["corpus"] == "provenance_rag_demo"
 
+    def test_examples_match_apple_10k_corpus(self, client: TestClient) -> None:
+        examples = client.get("/examples").json()["examples"]
+        questions = " ".join(ex["question"] for ex in examples).lower()
+        assert "apple" in questions
+        assert "acme" not in questions
+        assert "constitution" not in questions
+        categories = {ex["category"] for ex in examples}
+        assert len(categories) >= 2
+        assert len(examples) >= 40
+        assert any(ex["category"] == "not_in_corpus" for ex in examples)
+
 
 class TestDemoScopeReadOnly:
     """Visitors must never be able to write into scope='demo'."""
@@ -86,6 +97,8 @@ class TestTierAUsageLimits:
         assert usage["questions_owner_llm_used"] == 0
         assert usage["questions_own_llm_used"] == 0
         assert usage["at_capacity"] is False
+        assert usage["owner_llm_provider"] == app.state.cfg.default_llm_provider
+        assert usage["owner_llm_model"] == app.state.cfg.default_llm_model
 
     def test_usage_remaining_decreases_correctly(self, client: TestClient) -> None:
         """Verify that remaining = max - used."""
