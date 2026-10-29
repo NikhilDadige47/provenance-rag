@@ -1,15 +1,12 @@
 import React, { useState } from 'react';
 import {
-  Shield,
   Eye,
   UploadCloud,
   Gauge,
-  Moon,
-  Sun,
   ChevronLeft,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
-import { Button } from './ui/button';
 import logoImg from '../assets/logo.png';
 
 export type NavItem = 'tier_a' | 'tier_b' | 'limits';
@@ -21,15 +18,15 @@ interface NavSidebarProps {
   onToggleTheme: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  isIngesting?: boolean;
 }
 
 export const NavSidebar: React.FC<NavSidebarProps> = ({
   activeNav,
   onSelectNav,
-  theme,
-  onToggleTheme,
   isCollapsed: controlledCollapsed,
   onToggleCollapse,
+  isIngesting = false,
 }) => {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -122,21 +119,33 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeNav === item.id;
+          const isLocked = item.id === 'tier_a' && isIngesting;
 
           return (
             <button
               key={item.id}
               onClick={() => onSelectNav(item.id)}
-              title={`${item.title} — ${item.subtitle}`}
+              aria-disabled={isLocked}
+              title={
+                isLocked
+                  ? 'Indexing in progress — Demo Corpus is locked until your document is ready'
+                  : `${item.title} — ${item.subtitle}`
+              }
               className={`w-full h-10 rounded-lg flex items-center transition-colors duration-150 relative group outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0 ${
                 isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5 text-left'
               } ${
-                isActive
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                isLocked
+                  ? 'text-muted-foreground/50 cursor-not-allowed opacity-60'
+                  : isActive
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
-              <Icon className="size-[19px] shrink-0" strokeWidth={2.25} />
+              {isLocked ? (
+                <Lock className="size-[19px] shrink-0" strokeWidth={2.25} />
+              ) : (
+                <Icon className="size-[19px] shrink-0" strokeWidth={2.25} />
+              )}
               {!isCollapsed && (
                 <span className="min-w-0 flex-1 font-semibold text-xs truncate leading-none">
                   {item.title}

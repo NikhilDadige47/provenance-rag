@@ -1,61 +1,54 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   UploadCloud,
   FileText,
   Trash2,
-  CheckCircle2,
-  AlertTriangle,
   Loader2,
   Sparkles,
   ArrowRight,
-  HelpCircle,
 } from 'lucide-react';
 import { Button } from './ui/button';
-import { UploadedDoc, CostEstimate, LLMConfig } from '../types';
+import { UploadedDoc, LLMConfig } from '../types';
 import { api } from '../lib/api';
+import { IngestProgress } from '../lib/ingestProgress';
+import { previewUrlForDoc } from '../lib/uploadedFiles';
 import { DocViewerModal, DemoDocData } from './DocViewerModal';
 import { TierCKeys } from './TierCKeys';
 
 interface TierBUploadProps {
   documents: UploadedDoc[];
-  onUploadSuccess: () => void;
   onRequestDelete: () => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
   onKeyConfigChange?: (config: LLMConfig | null) => void;
   onAskExample?: (q: string) => void;
-  onIngestStateChange?: (isIngesting: boolean, docName?: string) => void;
+  onStartIngest: (file: File) => void;
+  ingest: IngestProgress | null;
+  suggestedQuestions?: string[];
 }
 
 export const TierBUpload: React.FC<TierBUploadProps> = ({
   documents,
-  onUploadSuccess,
   onRequestDelete,
   onToast,
   onKeyConfigChange,
   onAskExample,
-  onIngestStateChange,
+  onStartIngest,
+  ingest,
+  suggestedQuestions = [],
 }) => {
   const [dragActive, setDragActive] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ stage: string; pct: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Optional BYOK State (activates TierCKeys within the upload workflow)
   const [useCustomKey, setUseCustomKey] = useState(false);
 
-  // Document preview popup state & cached blob URLs for uploaded files
+  // Document preview popup state
   const [previewDoc, setPreviewDoc] = useState<DemoDocData | null>(null);
-  const [blobUrls, setBlobUrls] = useState<Record<string, string>>({});
 
-  // Dynamic starter questions for ingested documents
-  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
-
-  // Notify parent of ingesting state
-  useEffect(() => {
-    onIngestStateChange?.(isUploading, selectedFile?.name);
-  }, [isUploading, selectedFile, onIngestStateChange]);
+  const isUploading = Boolean(ingest && ingest.phase !== 'done' && ingest.phase !== 'error');
+  const uploadProgress =
+    ingest && ingest.phase !== 'error' ? { stage: ingest.stage, pct: ingest.pct } : null;
 
   const handleToggleCustomKey = (checked: boolean) => {
     setUseCustomKey(checked);
@@ -66,7 +59,11 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
     }
   };
 
-  const startIngestionForFile = async (file: File) => {
+  const startIngestionForFile = (file: File) => {
+    if (isUploading) {
+      onToast('A document is already indexing. Please wait until it finishes.', 'warning');
+      return;
+    }
     if (!file.name.toLowerCase().endsWith('.pdf')) {
       onToast('Only PDF documents are supported.', 'error');
       return;
@@ -76,86 +73,20 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
       return;
     }
 
-    setSelectedFile(file);
-    setIsUploading(true);
-    setUploadProgress({ stage: 'Validating & uploading document...', pct: 20 });
-
-    // Store local blob URL for instant PDF preview popup
-    const blobUrl = URL.createObjectURL(file);
-    setBlobUrls((prev) => ({ ...prev, [file.name]: blobUrl }));
-
-    try {
-      const res = await api.uploadFile(file, 'auto');
-      const jobId = res.job_id;
-
-      setUploadProgress({ stage: 'Extracting text and structure...', pct: 45 });
-      let pollCount = 0;
-
-      const pollInterval = setInterval(async () => {
-        pollCount += 1;
-        try {
-          const status = await api.pollJob(jobId);
-
-          if (status.status === 'completed') {
-            clearInterval(pollInterval);
-            setUploadProgress({ stage: 'Indexing complete!', pct: 100 });
-
-            // Generate clean starter questions based on the uploaded file
-            const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-            setSuggestedQuestions([
-              `Summarize key findings and core metrics from ${baseName}`,
-              `What are the primary operational requirements and obligations in ${baseName}?`,
-              `Identify the major structural components and conclusions in ${baseName}`,
-            ]);
-
-            setTimeout(() => {
-              setIsUploading(false);
-              setUploadProgress(null);
-              setSelectedFile(null);
-              onUploadSuccess();
-              onToast(`"${file.name}" indexed! Ready to query.`, 'success');
-            }, 600);
-          } else if (status.status === 'failed') {
-            clearInterval(pollInterval);
-            setIsUploading(false);
-            setUploadProgress(null);
-            onToast(status.error || 'Ingestion failed during processing.', 'error');
-          } else {
-            const targetPct = Math.min(45 + pollCount * 10, 92);
-            const stages = [
-              'Extracting text & layout structure...',
-              'Generating semantic parent & child chunks...',
-              'Computing Cohere 1024-dim embeddings...',
-              'Upserting vectors into isolated Qdrant tenant...',
-            ];
-            const stageIndex = Math.min(Math.floor(pollCount / 2), stages.length - 1);
-            setUploadProgress({ stage: stages[stageIndex], pct: targetPct });
-          }
-        } catch (pollErr: any) {
-          console.warn('Polling warning:', pollErr);
-        }
-
-        if (pollCount > 120) {
-          clearInterval(pollInterval);
-          setIsUploading(false);
-          setUploadProgress(null);
-          onToast('Ingestion timed out. Please check server status.', 'error');
-        }
-      }, 1400);
-    } catch (err: any) {
-      setIsUploading(false);
-      setUploadProgress(null);
-      onToast(err.message || 'Failed to upload document', 'error');
-    }
+    onStartIngest(file);
   };
 
   const handleOpenDocPreview = (doc: UploadedDoc) => {
-    const url = blobUrls[doc.filename] || `/demo_corpus/${doc.filename}`;
+    const url = previewUrlForDoc(doc.doc_id, doc.filename);
+    if (!url) {
+      onToast('PDF preview is available for files uploaded in this browser session.', 'warning');
+      return;
+    }
     setPreviewDoc({
       title: doc.filename,
       filename: doc.filename,
-      desc: `Ingested document: ${doc.chunk_count} chunks, ${doc.token_count} tokens.`,
-      pages: 1,
+      desc: `Ingested document: ${doc.chunk_count} chunks, ${doc.page_count || doc.token_count || 0} pages.`,
+      pages: doc.page_count || 1,
       chunks: doc.chunk_count,
       category: 'Uploaded PDF',
       pdfUrl: url,
@@ -166,16 +97,11 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
     <div className="space-y-4">
       {/* Upload Box */}
       <div className="border border-border/80 rounded-lg p-5 surface-inset shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <h3 className="font-semibold text-base text-foreground">Document Ingestion</h3>
-            <p className="text-xs text-muted-foreground">
-              Isolated session · Max 10MB · 30 pages · Owner-paid parse · TTL shred
-            </p>
-          </div>
-          <span className="text-[11px] font-mono text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-md border border-border/60">
-            Isolated Tenant
-          </span>
+        <div className="space-y-0.5">
+          <h3 className="font-semibold text-base text-foreground">Document Ingestion</h3>
+          <p className="text-xs text-muted-foreground">
+            Isolated session · Max 10MB · 30 pages · Owner-paid parse · TTL shred
+          </p>
         </div>
 
         {/* Drag and Drop Zone */}
@@ -214,7 +140,9 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
           <UploadCloud className="size-6 text-muted-foreground mb-2" />
 
           <p className="text-xs font-medium text-foreground">
-            {selectedFile ? selectedFile.name : 'Click to browse or drop your PDF here'}
+            {ingest?.fileName && isUploading
+              ? ingest.fileName
+              : 'Click to browse or drop your PDF here'}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             PDF files only (max 10MB, up to 30 pages)
@@ -237,6 +165,9 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
                 style={{ width: `${uploadProgress.pct}%` }}
               />
             </div>
+            <p className="text-[11px] text-muted-foreground">
+              Indexing keeps running if you open Limits. Demo Corpus stays locked until this finishes.
+            </p>
           </div>
         )}
 
@@ -317,39 +248,41 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             {documents.map((doc) => (
               <div
                 key={doc.doc_id}
-                onClick={() => handleOpenDocPreview(doc)}
-                className="p-3 rounded-md border border-border bg-muted/20 hover:bg-muted/50 hover:border-primary/50 transition-all cursor-pointer flex items-center justify-between gap-3 text-xs group select-none"
-                title={`Click to preview ${doc.filename}`}
+                className="rounded-md border border-border bg-muted/20 hover:bg-muted/50 hover:border-primary/50 transition-all flex items-center gap-1 text-xs group"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <FileText className="size-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                      {doc.filename}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground font-mono">
-                      {doc.chunk_count} chunks • {doc.token_count} tokens
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => handleOpenDocPreview(doc)}
+                  className="flex-1 min-w-0 p-3 flex items-center justify-between gap-3 text-left cursor-pointer"
+                  title={`Click to preview ${doc.filename}`}
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <FileText className="size-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
+                    <span className="min-w-0">
+                      <span className="font-medium text-foreground truncate group-hover:text-primary transition-colors block">
+                        {doc.filename}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground font-mono block">
+                        {doc.page_count ? `${doc.page_count} pages` : ''}
+                        {doc.page_count && doc.chunk_count ? ' • ' : ''}
+                        {doc.chunk_count > 0 ? `${doc.chunk_count} chunks` : ''}
+                        {!doc.page_count && !doc.chunk_count ? 'Ready to preview' : ''}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 shrink-0">
                     View PDF
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRequestDelete();
-                    }}
-                    className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                    title="Wipe document vectors"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onRequestDelete()}
+                  className="size-7 mr-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                  title="Wipe document vectors"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
               </div>
             ))}
           </div>

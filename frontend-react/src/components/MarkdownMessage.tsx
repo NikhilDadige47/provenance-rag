@@ -256,9 +256,9 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
       continue;
     }
 
-    // Blank line
+    // Blank line: keep lists open so consecutive `1.` / `-` items stay one sequence.
+    // Models often emit `1.` for every point with a blank line between them.
     if (!trimmed) {
-      flushList(`list-flush-${i}`);
       flushTable(`table-flush-${i}`);
       continue;
     }

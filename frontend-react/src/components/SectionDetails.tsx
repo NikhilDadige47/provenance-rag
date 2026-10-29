@@ -1,18 +1,18 @@
 import React from 'react';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from './ui/button';
 import { NavItem } from './NavSidebar';
 import { TierADemo } from './TierADemo';
 import { TierBUpload } from './TierBUpload';
 import { LimitsPanel } from './LimitsPanel';
 import { UsageInfo, UploadedDoc, LLMConfig, ExampleQuestion } from '../types';
+import { IngestProgress } from '../lib/ingestProgress';
 
 interface SectionDetailsProps {
   activeNav: NavItem;
   usage: UsageInfo | null;
   scope: string;
   documents: UploadedDoc[];
-  onUploadSuccess: () => void;
   onRequestDelete: () => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
   onKeyConfigChange: (cfg: LLMConfig | null) => void;
@@ -22,7 +22,10 @@ interface SectionDetailsProps {
   isDragging?: boolean;
   theme?: 'light' | 'dark';
   onToggleTheme?: () => void;
-  onIngestStateChange?: (isIngesting: boolean, docName?: string) => void;
+  onStartIngest: (file: File) => void;
+  ingest: IngestProgress | null;
+  suggestedQuestions?: string[];
+  onGoToUpload?: () => void;
 }
 
 export const SectionDetails: React.FC<SectionDetailsProps> = ({
@@ -30,7 +33,6 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
   usage,
   scope,
   documents,
-  onUploadSuccess,
   onRequestDelete,
   onToast,
   onKeyConfigChange,
@@ -40,7 +42,10 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
   isDragging,
   theme,
   onToggleTheme,
-  onIngestStateChange,
+  onStartIngest,
+  ingest,
+  suggestedQuestions = [],
+  onGoToUpload,
 }) => {
   const sectionHeaders: Record<NavItem, { title: string; subtitle: string }> = {
     tier_a: {
@@ -91,6 +96,35 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
 
       {/* Dynamic Content Panel */}
       <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+        {ingest && ingest.phase !== 'done' && ingest.phase !== 'error' && activeNav !== 'tier_b' && (
+          <button
+            type="button"
+            onClick={onGoToUpload}
+            className="w-full text-left space-y-2 p-3 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
+          >
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-foreground flex items-center gap-2">
+                <Loader2 className="size-3.5 animate-spin text-primary" />
+                <span className="truncate">Indexing {ingest.fileName}</span>
+              </span>
+              <span className="font-mono text-muted-foreground font-bold shrink-0">{ingest.pct}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-primary h-full transition-all duration-300 rounded-full"
+                style={{ width: `${ingest.pct}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground flex items-center justify-between gap-2">
+              <span className="truncate">{ingest.stage}</span>
+              <span className="inline-flex items-center gap-1 text-primary shrink-0">
+                View upload
+                <ArrowRight className="size-3" />
+              </span>
+            </p>
+          </button>
+        )}
+
         {activeNav === 'tier_a' && (
           <TierADemo onAskExample={onAskExample} exampleChips={exampleChips} />
         )}
@@ -98,12 +132,13 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
         {activeNav === 'tier_b' && (
           <TierBUpload
             documents={documents}
-            onUploadSuccess={onUploadSuccess}
             onRequestDelete={onRequestDelete}
             onToast={onToast}
             onKeyConfigChange={onKeyConfigChange}
             onAskExample={onAskExample}
-            onIngestStateChange={onIngestStateChange}
+            onStartIngest={onStartIngest}
+            ingest={ingest}
+            suggestedQuestions={suggestedQuestions}
           />
         )}
 

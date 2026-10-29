@@ -182,9 +182,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {currentTier === 'tier_b' && (
               <TierBUpload
                 documents={documents}
-                onUploadSuccess={onUploadSuccess}
                 onRequestDelete={onRequestDelete}
                 onToast={onToast}
+                onStartIngest={() => onUploadSuccess()}
+                ingest={null}
               />
             )}
           </div>

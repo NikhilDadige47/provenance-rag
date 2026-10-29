@@ -11,7 +11,6 @@ Implements roadmap P6-T1 through P6-T6:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid
@@ -105,6 +104,8 @@ class DocumentMetadataResponse(BaseModel):
     embedding_version: str
     ingested_at: str
     quality_warnings: list[str] | None = None
+    chunk_count: int = 0
+    filename: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -264,18 +265,16 @@ async def upload_document(
         runner = JobRunner(db=db, store=store, cfg=cfg)
         request.app.state.job_runner = runner
 
-    # 8. Fire background task
-    asyncio.create_task(
-        runner.run_ingestion_pipeline(
-            job_id=job_id,
-            session_id=session.session_id,
-            filename=validation.filename,
-            file_bytes=file_bytes,
-            parser_name=parser_clean,
-            parser_key=effective_parser_key,
-            allow_fallback=allow_fallback,
-            client_ip=client_ip,
-        )
+    # 8. Fire background task with a strong reference so it cannot be GC'd
+    runner.spawn_ingestion_pipeline(
+        job_id=job_id,
+        session_id=session.session_id,
+        filename=validation.filename,
+        file_bytes=file_bytes,
+        parser_name=parser_clean,
+        parser_key=effective_parser_key,
+        allow_fallback=allow_fallback,
+        client_ip=client_ip,
     )
 
     return JobSubmitResponse(
@@ -374,6 +373,8 @@ async def list_session_documents(
                 embedding_version=d.get("embedding_version", "emb-v1"),
                 ingested_at=d["ingested_at"],
                 quality_warnings=quality_warnings,
+                chunk_count=int(d.get("chunk_count") or 0),
+                filename=str(d.get("filename") or d.get("title") or "document.pdf"),
             )
         )
     return results

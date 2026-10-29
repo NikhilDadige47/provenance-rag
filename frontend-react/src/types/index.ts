@@ -60,6 +60,7 @@ export interface UploadedDoc {
   token_count: number;
   parser_tier: string;
   uploaded_at: string;
+  page_count?: number;
 }
 
 export interface CostEstimate {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -95,6 +96,10 @@ async def test_job_runner_happy_path(job_env) -> None:
     assert doc is not None
     assert doc["title"] == "Q3 Report"
     assert doc["page_count"] == 1
+    listed = db.list_documents("session_job_1")
+    assert len(listed) == 1
+    assert listed[0]["chunk_count"] > 0
+    assert listed[0]["filename"] == "report.pdf"
 
     # 3. Session counters updated
     session_row = db.get_session("session_job_1")
@@ -296,3 +301,27 @@ async def test_job_runner_auto_uses_landingai_when_owner_key_present(job_env) ->
     assert job["status"] == "ready"
     doc = db.get_document(job["doc_id"], session_id="session_job_1")
     assert doc["parser_used"] == "landingai"
+
+
+@pytest.mark.asyncio
+async def test_spawn_ingestion_retains_task_until_done(job_env) -> None:
+    """Background ingest tasks must be strongly referenced until they finish."""
+    _db, _store, runner, _cfg = job_env
+    gate = asyncio.Event()
+
+    async def blocked(*_args, **_kwargs) -> None:
+        await gate.wait()
+
+    runner.run_ingestion_pipeline = blocked  # type: ignore[method-assign]
+    task = runner.spawn_ingestion_pipeline(
+        job_id="job_retain",
+        session_id="session_job_1",
+        filename="report.pdf",
+        file_bytes=b"%PDF",
+        parser_name="local_pymupdf",
+    )
+    await asyncio.sleep(0)
+    assert task in runner._tasks
+    gate.set()
+    await task
+    assert task not in runner._tasks

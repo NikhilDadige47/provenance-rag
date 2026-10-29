@@ -23,7 +23,7 @@ class DatabaseManager:
         self.init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -87,10 +87,15 @@ class DatabaseManager:
                     chunking_version TEXT DEFAULT 'hybrid-v1',
                     embedding_version TEXT DEFAULT 'emb-v1',
                     ingested_at TEXT NOT NULL,
+                    filename TEXT,
                     FOREIGN KEY (session_id) REFERENCES sessions (session_id)
                 )
                 """
             )
+            cursor.execute("PRAGMA table_info(documents)")
+            document_columns = {row[1] for row in cursor.fetchall()}
+            if "filename" not in document_columns:
+                cursor.execute("ALTER TABLE documents ADD COLUMN filename TEXT")
 
             # 4. Parents table
             cursor.execute(
@@ -365,9 +370,11 @@ class DatabaseManager:
         quality_flags: str | None = None,
         chunking_version: str = "hybrid-v1",
         embedding_version: str = "emb-v1",
+        filename: str | None = None,
     ) -> None:
         """Insert metadata for an ingested document."""
         now_iso = datetime.now(UTC).isoformat()
+        original_name = filename or title
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -375,8 +382,8 @@ class DatabaseManager:
                 INSERT OR REPLACE INTO documents (
                     doc_id, session_id, title, content_hash, page_count,
                     parser_used, parser_version, quality_flags,
-                    chunking_version, embedding_version, ingested_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    chunking_version, embedding_version, ingested_at, filename
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     doc_id,
@@ -390,6 +397,7 @@ class DatabaseManager:
                     chunking_version,
                     embedding_version,
                     now_iso,
+                    original_name,
                 ),
             )
             conn.commit()
@@ -399,7 +407,19 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM documents WHERE session_id = ? ORDER BY ingested_at DESC",
+                """
+                SELECT d.*, COALESCE((
+                    SELECT j.chunks FROM jobs j
+                    WHERE j.doc_id = d.doc_id
+                      AND j.session_id = d.session_id
+                      AND j.status = 'ready'
+                    ORDER BY j.finished_at DESC
+                    LIMIT 1
+                ), 0) AS chunk_count
+                FROM documents d
+                WHERE d.session_id = ?
+                ORDER BY d.ingested_at DESC
+                """,
                 (session_id,),
             )
             return [dict(row) for row in cursor.fetchall()]

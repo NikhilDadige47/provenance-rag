@@ -4,10 +4,24 @@ import { SectionDetails } from './components/SectionDetails';
 import { ChatContainer } from './components/ChatContainer';
 import { SectionFooter } from './components/SectionFooter';
 import { DeleteModal } from './components/DeleteModal';
-import { Database } from 'lucide-react';
 import { Toast, ToastMessage } from './components/Toast';
 import { AccessTier, UsageInfo, ExampleQuestion, UploadedDoc, LLMConfig } from './types';
 import { api } from './lib/api';
+import {
+  bindUploadedDoc,
+  clearUploadedFiles,
+  originalNameForDoc,
+  rememberUploadedFile,
+} from './lib/uploadedFiles';
+import {
+  IngestProgress,
+  INGEST_POLL_MS,
+  INGEST_TIMEOUT_MS,
+  isJobFailed,
+  isJobSuccess,
+  progressForJobStatus,
+  suggestedQuestionsForFile,
+} from './lib/ingestProgress';
 
 const DEFAULT_MIDDLE_WIDTH = 480;
 const MIN_MIDDLE_WIDTH = 400;
@@ -26,8 +40,10 @@ export function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isIngesting, setIsIngesting] = useState(false);
-  const [activeDocName, setActiveDocName] = useState<string>('');
+  const [ingest, setIngest] = useState<IngestProgress | null>(null);
+  const isIngesting = Boolean(ingest && ingest.phase !== 'done' && ingest.phase !== 'error');
+  const activeDocName = ingest?.fileName || documents[0]?.filename;
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
   const [queuedNonce, setQueuedNonce] = useState(0);
   const [visitorLlm, setVisitorLlm] = useState<LLMConfig | null>(null);
@@ -93,7 +109,14 @@ export function App() {
   const refreshDocuments = async () => {
     try {
       const docs = await api.getDocuments();
-      setDocuments(docs);
+      setDocuments((prev) => {
+        if (docs.length === 0) return prev;
+        return docs.map((doc) => {
+          const filename = originalNameForDoc(doc.doc_id, doc.filename);
+          bindUploadedDoc(doc.doc_id, filename);
+          return { ...doc, filename };
+        });
+      });
     } catch {
       // Ignored
     }
@@ -136,6 +159,100 @@ export function App() {
     };
   }, []);
 
+  // Keep ingest polling at the App level so it survives leaving the Upload panel.
+  useEffect(() => {
+    if (!ingest?.jobId || ingest.phase !== 'processing') return;
+
+    let cancelled = false;
+    let settled = false;
+    let inFlight = false;
+    const jobId = ingest.jobId;
+    const fileName = ingest.fileName;
+    const startedAt = Date.now();
+
+    const finishSuccess = (status: { doc_id?: string; chunks?: number; pages?: number; parser_name?: string }) => {
+      if (settled || cancelled) return;
+      settled = true;
+      if (status.doc_id) {
+        bindUploadedDoc(status.doc_id, fileName);
+      }
+      const localDoc: UploadedDoc = {
+        doc_id: status.doc_id || `local_${jobId}`,
+        filename: fileName,
+        chunk_count: Number(status.chunks || 0),
+        token_count: 0,
+        parser_tier: status.parser_name || 'auto',
+        uploaded_at: new Date().toISOString(),
+        page_count: Number(status.pages || 0),
+      };
+      setDocuments((prev) => {
+        const withoutDup = prev.filter(
+          (doc) => doc.doc_id !== localDoc.doc_id && doc.filename !== fileName
+        );
+        return [localDoc, ...withoutDup];
+      });
+      setIngest({
+        jobId,
+        fileName,
+        stage: 'Indexing complete!',
+        pct: 100,
+        phase: 'done',
+      });
+      setSuggestedQuestions(suggestedQuestionsForFile(fileName));
+      refreshDocuments();
+      refreshUsage();
+      addToast(`"${fileName}" indexed! Ready to query.`, 'success');
+      window.setTimeout(() => {
+        setIngest(null);
+      }, 700);
+    };
+
+    const finishFailure = (message: string) => {
+      if (settled || cancelled) return;
+      settled = true;
+      setIngest(null);
+      addToast(message, 'error');
+    };
+
+    const poll = async () => {
+      if (cancelled || settled || inFlight) return;
+      inFlight = true;
+      try {
+        const status = await api.pollJob(jobId);
+        if (cancelled || settled) return;
+        if (isJobSuccess(status.status)) {
+          finishSuccess(status);
+          return;
+        }
+        if (isJobFailed(status.status)) {
+          finishFailure(status.error_message || status.error || 'Ingestion failed during processing.');
+          return;
+        }
+        const next = progressForJobStatus(status.status);
+        setIngest((prev) =>
+          prev && prev.jobId === jobId
+            ? { ...prev, stage: next.stage, pct: next.pct, phase: 'processing' }
+            : prev
+        );
+      } catch (pollErr) {
+        console.warn('Polling warning:', pollErr);
+      } finally {
+        inFlight = false;
+      }
+
+      if (Date.now() - startedAt > INGEST_TIMEOUT_MS) {
+        finishFailure('Ingestion timed out. Please check server status.');
+      }
+    };
+
+    poll();
+    const intervalId = window.setInterval(poll, INGEST_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [ingest?.jobId, ingest?.phase]);
+
   const handleSelectTier = async (tier: AccessTier) => {
     setCurrentTier(tier);
     api.setTier(tier);
@@ -149,12 +266,69 @@ export function App() {
     }
   };
 
+  const applyNavScope = (item: NavItem) => {
+    if (item === 'tier_a') {
+      setCurrentTier('tier_a');
+      api.setTier('tier_a');
+      setScope('demo');
+    } else if (item === 'tier_b') {
+      setCurrentTier('tier_b');
+      api.setTier('tier_b');
+      setScope('isolated');
+    }
+  };
+
+  const handleSelectNav = (item: NavItem) => {
+    if (item === 'tier_a' && isIngesting) {
+      addToast(
+        'Indexing is still running. Demo Corpus is locked until your document is ready.',
+        'warning'
+      );
+      return;
+    }
+    setActiveNav(item);
+    applyNavScope(item);
+  };
+
+  const handleStartIngest = async (file: File) => {
+    rememberUploadedFile(file);
+    setSuggestedQuestions([]);
+    setCurrentTier('tier_b');
+    api.setTier('tier_b');
+    setScope('isolated');
+    setIngest({
+      jobId: null,
+      fileName: file.name,
+      stage: 'Validating & uploading document...',
+      pct: 15,
+      phase: 'uploading',
+    });
+
+    try {
+      const res = await api.uploadFile(file, 'auto');
+      const queued = progressForJobStatus('queued');
+      setIngest({
+        jobId: res.job_id,
+        fileName: file.name,
+        stage: queued.stage,
+        pct: queued.pct,
+        phase: 'processing',
+      });
+    } catch (err: any) {
+      setIngest(null);
+      addToast(err.message || 'Failed to upload document', 'error');
+    }
+  };
+
   const handleConfirmDelete = async () => {
     setIsDeleting(true);
     try {
       await api.deleteSession();
       setShowDeleteModal(false);
       setDocuments([]);
+      setIngest(null);
+      setSuggestedQuestions([]);
+      clearUploadedFiles();
       // Reset to tier A
       setActiveNav('tier_a');
       await handleSelectTier('tier_a');
@@ -210,7 +384,7 @@ export function App() {
     localStorage.removeItem('provenance_middle_width');
   };
 
-  const indexedDocCount = documents.length + 3;
+  const hideChat = activeNav === 'limits';
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden surface-shell text-foreground transition-colors select-none">
@@ -218,16 +392,12 @@ export function App() {
         {/* SECTION 1: Nav Sidebar Menu with Collapse Control */}
         <NavSidebar
           activeNav={activeNav}
-          onSelectNav={(item) => {
-            setActiveNav(item);
-            if (item === 'tier_a' || item === 'tier_b') {
-              handleSelectTier(item);
-            }
-          }}
+          onSelectNav={handleSelectNav}
           theme={theme}
           onToggleTheme={toggleTheme}
           isCollapsed={isNavCollapsed}
           onToggleCollapse={() => setIsNavCollapsed((prev) => !prev)}
+          isIngesting={isIngesting}
         />
 
         {/* SECTION 2: Details Panel for Selected Menu Item (Equally divided 50/50 by default) */}
@@ -236,10 +406,6 @@ export function App() {
           usage={usage}
           scope={scope}
           documents={documents}
-          onUploadSuccess={() => {
-            refreshDocuments();
-            refreshUsage();
-          }}
           onRequestDelete={() => setShowDeleteModal(true)}
           onToast={addToast}
           onKeyConfigChange={(cfg: LLMConfig | null) => {
@@ -248,17 +414,18 @@ export function App() {
           }}
           onAskExample={handleAskExample}
           exampleChips={exampleChips}
-          width={effectiveMiddleWidth}
+          width={hideChat ? null : effectiveMiddleWidth}
           isDragging={isDragging}
           theme={theme}
           onToggleTheme={toggleTheme}
-          onIngestStateChange={(ingesting, docName) => {
-            setIsIngesting(ingesting);
-            if (docName) setActiveDocName(docName);
-          }}
+          onStartIngest={handleStartIngest}
+          ingest={ingest}
+          suggestedQuestions={suggestedQuestions}
+          onGoToUpload={() => handleSelectNav('tier_b')}
         />
 
         {/* INTERACTIVE RESIZABLE DIVIDER LINE (Between Section 2 and Section 3) */}
+        {!hideChat && (
         <div
           onMouseDown={handleMouseDownDivider}
           onDoubleClick={handleResetDivider}
@@ -270,9 +437,17 @@ export function App() {
             <div className="w-1.5 h-2 border-x border-muted-foreground/60" />
           </div>
         </div>
+        )}
 
         {/* SECTION 3: Primary Chatbox Canvas (Equally divided 50/50 by default, attached to borders) */}
-        <main className="flex-1 basis-0 min-w-[400px] flex flex-col h-full overflow-hidden">
+        <main
+          className={
+            hideChat
+              ? 'hidden'
+              : 'flex-1 basis-0 min-w-[400px] flex flex-col h-full overflow-hidden'
+          }
+          aria-hidden={hideChat}
+        >
           <ChatContainer
             scope={scope}
             exampleChips={exampleChips}
@@ -281,23 +456,18 @@ export function App() {
             onUsageUpdate={refreshUsage}
             onToast={addToast}
             isIngesting={isIngesting}
+            ingestPct={ingest?.pct}
             documentCount={documents.length}
-            activeDocName={activeDocName || documents[0]?.filename}
+            activeDocName={activeDocName}
             llmProvider={visitorLlm ? visitorLlm.provider : usage?.owner_llm_provider}
             llmModel={visitorLlm ? visitorLlm.model : usage?.owner_llm_model}
+            activeNav={activeNav}
+            onGoToUpload={() => handleSelectNav('tier_b')}
           />
         </main>
       </div>
 
-      <SectionFooter>
-        <span
-          className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground"
-          title={`${indexedDocCount} total docs indexed`}
-        >
-          <Database className="size-3 shrink-0" />
-          <span>{indexedDocCount} docs</span>
-        </span>
-      </SectionFooter>
+      <SectionFooter />
 
       {/* Delete Confirmation Modal */}
       <DeleteModal

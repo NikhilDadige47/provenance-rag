@@ -1,14 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Send,
-  GitBranch,
   AlertTriangle,
   Shield,
-  BookOpen,
   Menu,
   Lock,
   Loader2,
-  CheckCircle2,
+  UploadCloud,
 } from 'lucide-react';
 import { Button } from './ui/button';
 
@@ -19,6 +17,7 @@ import { AIReasoningTrace } from './AIReasoningTrace';
 import { SourcesDropdown } from './SourcesDropdown';
 import { SourceInspectorPanel } from './SourceInspectorPanel';
 import queryHistoryIcon from '../assets/query-history.png';
+import { NavItem } from './NavSidebar';
 
 interface ChatContainerProps {
   scope: string;
@@ -29,10 +28,13 @@ interface ChatContainerProps {
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
   onOpenMobileMenu?: () => void;
   isIngesting?: boolean;
+  ingestPct?: number;
   documentCount?: number;
   activeDocName?: string;
   llmProvider?: string;
   llmModel?: string;
+  activeNav?: NavItem;
+  onGoToUpload?: () => void;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -63,10 +65,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   onToast,
   onOpenMobileMenu,
   isIngesting = false,
+  ingestPct,
   documentCount = 0,
   activeDocName,
   llmProvider,
   llmModel,
+  activeNav,
+  onGoToUpload,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -255,8 +260,59 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     });
   };
 
+  const showLockOverlay = isLocked || isProcessing;
+
   return (
     <div className="relative flex flex-col h-full flex-1 surface-panel overflow-hidden">
+      {showLockOverlay && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-background/35 dark:bg-background/45"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex flex-col items-center text-center gap-3 px-6 max-w-sm">
+            <div className="size-16 rounded-full border border-border bg-card shadow-sm flex items-center justify-center">
+              {isProcessing ? (
+                <Loader2 className="size-7 animate-spin text-primary" />
+              ) : (
+                <Lock className="size-7 text-muted-foreground" strokeWidth={2.25} />
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className="font-semibold text-sm text-foreground">
+                {isProcessing ? 'Indexing document' : 'Chat is locked'}
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {isProcessing
+                  ? `Ingesting ${activeDocName || 'your PDF'}${
+                      typeof ingestPct === 'number' ? ` (${ingestPct}%)` : ''
+                    }. Chat unlocks when indexing finishes.`
+                  : 'Upload a document to unlock the chat.'}
+              </p>
+            </div>
+            {!isProcessing && onGoToUpload && activeNav !== 'tier_b' && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onGoToUpload}
+                className="mt-1 h-9 gap-1.5 text-xs"
+              >
+                <UploadCloud className="size-3.5" />
+                Go to Upload Documents
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div
+        className={`flex min-h-0 flex-1 flex-col overflow-hidden ${
+          showLockOverlay
+            ? 'pointer-events-none select-none blur-3xl opacity-50'
+            : ''
+        }`}
+        aria-hidden={showLockOverlay}
+      >
       {/* Chat Header */}
       <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between text-xs shrink-0">
         <div className="flex items-center gap-2.5">
@@ -422,7 +478,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary mb-2.5 font-medium animate-pulse">
             <Loader2 className="size-3.5 animate-spin shrink-0" />
             <span className="truncate">
-              Ingesting <strong>{activeDocName || 'document'}</strong> & generating vector embeddings... Please wait before querying.
+              Ingesting <strong>{activeDocName || 'document'}</strong>
+              {typeof ingestPct === 'number' ? ` (${ingestPct}%)` : ''} — indexing continues if you switch to Limits.
             </span>
           </div>
         )}
@@ -491,6 +548,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             )}
           </Button>
         </div>
+      </div>
       </div>
     </div>
   );

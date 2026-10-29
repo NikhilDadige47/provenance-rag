@@ -23,7 +23,7 @@ from pathlib import Path
 import pymupdf
 
 from src.ingest.chunking.hybrid_chunker import HybridChunker
-from src.ingest.chunking.models import ChunkingConfig
+from src.ingest.chunking.models import ChildChunk, ChunkingConfig, ParentChunk
 from src.ingest.parsers.local_pymupdf import LocalPyMuPDFParser, extract_raw_reference_text
 from src.ingest.parsers.quality_gate import QualityGateResult, evaluate_quality_gate
 from src.ingest.parsers.registry import default_parser_registry
@@ -31,7 +31,7 @@ from src.ingest.parsers.router import FallbackParserRouter, ParseExecutionResult
 from src.ingest.parsers.selection import canonical_parser_label
 from src.ingest.parsers.structured_doc import StructuredDoc
 from src.retrieval.embed import CohereEmbedder
-from src.retrieval.sparse import LocalSparseVectorizer
+from src.retrieval.sparse import LocalSparseVectorizer, SparseVector
 from src.retrieval.store import QdrantVectorStore
 from src.security.config import OwnerConfig
 from src.security.errors import InvalidKeyError, QuotaExhaustedError, RateLimitedError
@@ -63,6 +63,38 @@ class JobRunner:
         self.sparse_vectorizer = LocalSparseVectorizer()
         self.local_parser = LocalPyMuPDFParser()
         self.router = FallbackParserRouter(db=self.db, cfg=self.cfg)
+        # Strong refs so asyncio does not GC in-flight ingest tasks (event loop
+        # only keeps weak references to tasks created via asyncio.create_task).
+        self._tasks: set[asyncio.Task[None]] = set()
+
+    def spawn_ingestion_pipeline(
+        self,
+        job_id: str,
+        session_id: str,
+        filename: str,
+        file_bytes: bytes,
+        parser_name: str,
+        parser_key: str | None = None,
+        allow_fallback: bool = True,
+        client_ip: str = "unknown",
+    ) -> asyncio.Task[None]:
+        """Schedule ingestion and retain a strong reference until it finishes."""
+        task = asyncio.create_task(
+            self.run_ingestion_pipeline(
+                job_id=job_id,
+                session_id=session_id,
+                filename=filename,
+                file_bytes=file_bytes,
+                parser_name=parser_name,
+                parser_key=parser_key,
+                allow_fallback=allow_fallback,
+                client_ip=client_ip,
+            ),
+            name=f"ingest-{job_id}",
+        )
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
 
     async def run_ingestion_pipeline(
         self,
@@ -221,7 +253,7 @@ class JobRunner:
             )
             structured_doc.title = resolved_title
 
-            chunk_result = self.chunker.chunk(structured_doc)
+            chunk_result = await asyncio.to_thread(self.chunker.chunk, structured_doc)
             parents = chunk_result.parents
             children = chunk_result.children
 
@@ -243,66 +275,31 @@ class JobRunner:
                     embedding_texts, input_type="search_document"
                 )
 
-            # Generate sparse BM25 vectors locally ($0)
-            sparse_vectors = self.sparse_vectorizer.vectorize_batch(embedding_texts)
+            # Generate sparse BM25 vectors locally ($0) off the event loop
+            sparse_vectors = await asyncio.to_thread(
+                self.sparse_vectorizer.vectorize_batch, embedding_texts
+            )
 
             # -----------------------------------------------------------------
-            # Step 6: Indexing into Qdrant & SQLite
+            # Step 6: Indexing into Qdrant & SQLite (sync I/O off the event loop
+            # so job polling stays responsive while vectors are upserted)
             # -----------------------------------------------------------------
             self.db.update_job(job_id, status="indexing")
 
-            # Insert parents into SQLite
-            self.db.insert_parents(parents=parents, session_id=session_id)
-
-            # Upsert dual vectors into Qdrant strictly scoped to session_id
-            doc_metadata = {
-                "title": structured_doc.title or filename,
-                "parser_used": parser_used,
-                "parser_version": "1.0",
-                "page_count": structured_doc.page_count,
-            }
-            self.store.upsert(
-                chunks=children,
+            await asyncio.to_thread(
+                self._persist_vectors_and_metadata,
+                session_id=session_id,
+                doc_id=doc_id,
+                filename=filename,
+                structured_doc=structured_doc,
+                parents=parents,
+                children=children,
                 dense_vectors=dense_vectors,
                 sparse_vectors=sparse_vectors,
-                scope=session_id,
-                doc_metadata=doc_metadata,
-            )
-
-            # Record document metadata in SQLite
-            self.db.insert_document(
-                doc_id=doc_id,
-                session_id=session_id,
-                title=structured_doc.title or filename,
-                content_hash=content_hash,
-                page_count=structured_doc.page_count,
                 parser_used=parser_used,
-                parser_version="1.0",
-                quality_flags=quality_flags_str,
+                quality_flags_str=quality_flags_str,
+                content_hash=content_hash,
             )
-
-            # Atomically update session usage counters
-            self.db.record_document_ingestion(
-                session_id=session_id,
-                pages=structured_doc.page_count,
-                chunks=len(children),
-            )
-
-            # Update daily usage tracking
-            today_str = time.strftime("%Y-%m-%d")
-            with self.db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO usage_daily (date, chunks_embedded, jobs)
-                    VALUES (?, ?, 1)
-                    ON CONFLICT(date) DO UPDATE SET
-                        chunks_embedded = chunks_embedded + excluded.chunks_embedded,
-                        jobs = jobs + 1
-                    """,
-                    (today_str, len(children)),
-                )
-                conn.commit()
 
             # Mark job ready!
             self.db.update_job(
@@ -416,6 +413,65 @@ class JobRunner:
                 )
             raise exc
 
+    def _persist_vectors_and_metadata(
+        self,
+        session_id: str,
+        doc_id: str,
+        filename: str,
+        structured_doc: StructuredDoc,
+        parents: list[ParentChunk],
+        children: list[ChildChunk],
+        dense_vectors: list[list[float]],
+        sparse_vectors: list[SparseVector],
+        parser_used: str,
+        quality_flags_str: str | None,
+        content_hash: str,
+    ) -> None:
+        """Blocking Qdrant upsert + SQLite writes. Always run via asyncio.to_thread."""
+        self.db.insert_parents(parents=parents, session_id=session_id)
+        self.store.upsert(
+            chunks=children,
+            dense_vectors=dense_vectors,
+            sparse_vectors=sparse_vectors,
+            scope=session_id,
+            doc_metadata={
+                "title": structured_doc.title or filename,
+                "parser_used": parser_used,
+                "parser_version": "1.0",
+                "page_count": structured_doc.page_count,
+            },
+        )
+        self.db.insert_document(
+            doc_id=doc_id,
+            session_id=session_id,
+            title=structured_doc.title or filename,
+            content_hash=content_hash,
+            page_count=structured_doc.page_count,
+            parser_used=parser_used,
+            parser_version="1.0",
+            quality_flags=quality_flags_str,
+            filename=filename,
+        )
+        self.db.record_document_ingestion(
+            session_id=session_id,
+            pages=structured_doc.page_count,
+            chunks=len(children),
+        )
+        today_str = time.strftime("%Y-%m-%d")
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO usage_daily (date, chunks_embedded, jobs)
+                VALUES (?, ?, 1)
+                ON CONFLICT(date) DO UPDATE SET
+                    chunks_embedded = chunks_embedded + excluded.chunks_embedded,
+                    jobs = jobs + 1
+                """,
+                (today_str, len(children)),
+            )
+            conn.commit()
+
     def _format_error(self, exc: Exception) -> str:
         """Format friendly error messages without leaking provider keys or internals."""
         if isinstance(exc, InvalidKeyError):
@@ -426,4 +482,6 @@ class JobRunner:
             return f"Parser quota exceeded: {exc.message}. Please check your account balance."
         if isinstance(exc, RateLimitedError):
             return "Parser provider is currently rate-limited. Please retry in a few moments."
+        if isinstance(exc, TimeoutError):
+            return str(exc) or "Ingestion timed out while indexing vectors. Please retry."
         return f"Ingestion error: {exc}"

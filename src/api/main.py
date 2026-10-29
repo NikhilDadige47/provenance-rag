@@ -92,8 +92,13 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
         yield  # Application is running
     finally:
         ttl_task.cancel()
+        ingest_tasks = list(job_runner._tasks)
+        for task in ingest_tasks:
+            task.cancel()
         with suppress(asyncio.CancelledError):
             await ttl_task
+        if ingest_tasks:
+            await asyncio.gather(*ingest_tasks, return_exceptions=True)
 
     logger.info("Provenance RAG API shutting down.")
 
