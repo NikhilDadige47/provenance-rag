@@ -31,7 +31,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -41,11 +41,20 @@ from src.api.chat import router as chat_router
 from src.api.connections import ConnectionTestRequest, verify_provider_connection
 from src.api.jobs import JobRunner
 from src.api.lifecycle import run_ttl_cleanup_loop
+from src.api.observability import record_request
+from src.api.observability import snapshot as metrics_snapshot
 from src.api.sessions import SessionCreateResponse, VisitorLLMKeys, create_session
 from src.api.upload import router as upload_router
 from src.retrieval.store import QdrantVectorStore
 from src.security.config import OwnerConfig
-from src.security.errors import KeySecurityError, ProviderTimeoutError
+from src.security.errors import (
+    InvalidKeyError,
+    KeySecurityError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+    QuotaExhaustedError,
+    RateLimitedError,
+)
 from src.security.ledger import Ledger
 from src.security.secret import Secret
 from src.storage.db import DatabaseManager
@@ -126,16 +135,34 @@ app = FastAPI(
 )
 
 
-# ---------------------------------------------------------------------------
-# CORS (wide-open for portfolio; tighten in production to your frontend domain)
-# ---------------------------------------------------------------------------
+def _cors_origins() -> list[str]:
+    """Lock CORS to the frontend origin in production; allow * only in development."""
+    try:
+        cfg = OwnerConfig.from_env()
+    except Exception:
+        return ["*"]
+    if cfg.app_env.lower() == "production":
+        origin = (cfg.frontend_origin or "").strip()
+        return [origin] if origin else ["http://localhost:5173"]
+    raw = (cfg.cors_origins or "*").strip()
+    if raw == "*":
+        return ["*"]
+    return [part.strip() for part in raw.split(",") if part.strip()] or ["*"]
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict to your frontend URL in production
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-LLM-Key", "X-LLM-Provider", "X-LLM-Model"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-LLM-Key",
+        "X-LLM-Provider",
+        "X-LLM-Model",
+        "X-Parser-Key",
+    ],
     expose_headers=["X-Request-ID"],
 )
 
@@ -143,6 +170,30 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Request ID middleware (attaches a unique request ID to every response)
 # ---------------------------------------------------------------------------
+
+
+def _request_is_https(request: Request) -> bool:
+    """Honor X-Forwarded-Proto from the TLS terminator; otherwise use the URL scheme."""
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    if forwarded:
+        return forwarded == "https"
+    return request.url.scheme == "https"
+
+
+def _reject_insecure_production(request: Request) -> JSONResponse | None:
+    """Block non-TLS traffic in production. /health stays reachable for internal probes."""
+    cfg = getattr(request.app.state, "cfg", None)
+    env = (getattr(cfg, "app_env", "development") or "development").lower()
+    if env != "production":
+        return None
+    if request.url.path == "/health":
+        return None
+    if _request_is_https(request):
+        return None
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={"detail": "HTTPS is required."},
+    )
 
 
 @app.middleware("http")
@@ -154,10 +205,19 @@ async def attach_request_id(request: Request, call_next: Any) -> Any:
     # Make request_id available to route handlers via request.state
     request.state.request_id = request_id
 
+    https_block = _reject_insecure_production(request)
+    if https_block is not None:
+        https_block.headers["X-Request-ID"] = request_id
+        _apply_security_headers(request, https_block)
+        record_request(https_block.status_code, round((time.time() - start) * 1000, 1))
+        return https_block
+
     response = await call_next(request)
 
     elapsed_ms = round((time.time() - start) * 1000, 1)
     response.headers["X-Request-ID"] = request_id
+    _apply_security_headers(request, response)
+    record_request(response.status_code, elapsed_ms)
 
     # Privacy-safe access log: method, path, status, timing — NO headers or body
     logger.info(
@@ -167,6 +227,35 @@ async def attach_request_id(request: Request, call_next: Any) -> Any:
     )
 
     return response
+
+
+def _apply_security_headers(request: Request, response: Any) -> None:
+    """HSTS, CSP, and clickjacking headers. Docs UI keeps a looser CSP."""
+    cfg = getattr(request.app.state, "cfg", None)
+    env = (getattr(cfg, "app_env", "development") or "development").lower()
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    if env == "production":
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains; preload"
+        )
+    path = request.url.path
+    if path.startswith("/docs") or path.startswith("/redoc") or path.startswith("/openapi"):
+        csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    else:
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+    response.headers["Content-Security-Policy"] = csp
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +280,39 @@ async def handle_timeout_error(request: Request, exc: ProviderTimeoutError) -> J
     )
 
 
+@app.exception_handler(InvalidKeyError)
+async def handle_invalid_key(request: Request, exc: InvalidKeyError) -> JSONResponse:
+    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": exc.message})
+
+
+@app.exception_handler(QuotaExhaustedError)
+async def handle_quota_exhausted(request: Request, exc: QuotaExhaustedError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED, content={"detail": exc.message}
+    )
+
+
+@app.exception_handler(RateLimitedError)
+async def handle_rate_limited(request: Request, exc: RateLimitedError) -> JSONResponse:
+    headers = {}
+    if exc.retry_after_seconds:
+        headers["Retry-After"] = str(int(exc.retry_after_seconds))
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": exc.message},
+        headers=headers,
+    )
+
+
+@app.exception_handler(ProviderUnavailableError)
+async def handle_provider_unavailable(
+    request: Request, exc: ProviderUnavailableError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"detail": exc.message}
+    )
+
+
 @app.exception_handler(Exception)
 async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     """Catch-all handler: log the error internally but never expose stack traces."""
@@ -211,14 +333,63 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
 
 
 class HealthResponse(BaseModel):
-    status: str = Field(description="'ok' when the service is running")
+    status: str = Field(description="'ok' when the process is serving traffic")
     version: str
+    ready: bool = True
+    components: dict[str, str] = Field(default_factory=dict)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["system"])
-async def health_check() -> HealthResponse:
-    """Liveness probe for load balancers and uptime monitors."""
-    return HealthResponse(status="ok", version="1.0.0")
+async def health_check(request: Request) -> HealthResponse:
+    """Liveness + readiness probe for load balancers and uptime monitors."""
+    components: dict[str, str] = {}
+    ready = True
+    db: DatabaseManager | None = getattr(request.app.state, "db", None)
+    store: QdrantVectorStore | None = getattr(request.app.state, "store", None)
+    try:
+        if db is not None:
+            with db._get_connection() as conn:
+                conn.execute("SELECT 1")
+            components["sqlite"] = "ok"
+        else:
+            components["sqlite"] = "uninitialized"
+            ready = False
+    except Exception:
+        components["sqlite"] = "error"
+        ready = False
+    try:
+        if store is not None and store.ping():
+            components["qdrant"] = "ok"
+        else:
+            components["qdrant"] = "error"
+            ready = False
+    except Exception:
+        components["qdrant"] = "error"
+        ready = False
+    return HealthResponse(
+        status="ok",
+        version="1.0.0",
+        ready=ready,
+        components=components,
+    )
+
+
+@app.get("/metrics", tags=["system"])
+async def metrics(request: Request) -> dict:
+    """Privacy-safe counters: no questions, documents, or keys."""
+    db: DatabaseManager | None = getattr(request.app.state, "db", None)
+    return metrics_snapshot(db)
+
+
+_TERMS_PATH = Path(__file__).resolve().parent.parent.parent / "TERMS.md"
+
+
+@app.get("/terms", tags=["system"])
+async def terms_text() -> FileResponse:
+    """Public terms and privacy note shown before the first upload."""
+    if not _TERMS_PATH.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Terms not found")
+    return FileResponse(path=_TERMS_PATH, media_type="text/markdown", filename="TERMS.md")
 
 
 # ---------------------------------------------------------------------------
@@ -241,11 +412,22 @@ async def health_check() -> HealthResponse:
 async def create_session_endpoint(
     request: Request,
     visitor_keys: VisitorLLMKeys,
+    response: Response,
 ) -> SessionCreateResponse:
-    """Create a new session and return a bearer token."""
+    """Create a new session and return a bearer token plus an HttpOnly cookie."""
     db: DatabaseManager = request.app.state.db
-    response = create_session(db=db, visitor_keys=visitor_keys)
-    return response
+    created = create_session(db=db, visitor_keys=visitor_keys)
+    cfg: OwnerConfig = getattr(request.app.state, "cfg", None) or OwnerConfig()
+    response.set_cookie(
+        key="session_token",
+        value=created.session_id,
+        httponly=True,
+        secure=(cfg.app_env or "").lower() == "production",
+        samesite="lax",
+        max_age=int(cfg.session_ttl_hours * 3600),
+        path="/",
+    )
+    return created
 
 
 # ---------------------------------------------------------------------------

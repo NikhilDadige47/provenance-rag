@@ -25,6 +25,8 @@ export default defineConfig({
       '/examples': 'http://127.0.0.1:8000',
       '/connections': 'http://127.0.0.1:8000',
       '/health': 'http://127.0.0.1:8000',
+      '/metrics': 'http://127.0.0.1:8000',
+      '/terms': 'http://127.0.0.1:8000',
       '/demo_corpus': 'http://127.0.0.1:8000',
     },
   },

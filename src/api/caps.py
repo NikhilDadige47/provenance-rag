@@ -11,7 +11,7 @@ Per-session caps (atomic SQLite updates):
 Per-IP rate limits:
   - N requests per rolling minute
   - Daily question cap per IP
-  - Daily upload cap per IP (reserved for Phase 6)
+  - Daily upload cap per IP
 
 Daily global caps (usage_daily table):
   - Chunks embedded, rerank calls, owner-LLM tokens, jobs
@@ -51,7 +51,7 @@ _ip_request_timestamps: dict[str, deque[float]] = defaultdict(deque)
 # ip -> date string -> question count
 _ip_daily_questions: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
-# ip -> date string -> upload count (reserved for Phase 6)
+# ip -> date string -> upload count
 _ip_daily_uploads: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
 # Rate limit: max requests per IP in RATE_WINDOW_SECONDS
@@ -128,6 +128,41 @@ def increment_ip_daily_questions(client_ip: str) -> None:
     today = _current_date_str()
     with _ip_lock:
         _ip_daily_questions[client_ip][today] += 1
+
+
+def check_ip_daily_upload_limit(client_ip: str) -> None:
+    """Enforce per-IP daily upload cap before a job is accepted.
+
+    Raises:
+        HTTPException 429 if the IP has exceeded MAX_DAILY_UPLOADS_PER_IP today.
+    """
+    today = _current_date_str()
+    with _ip_lock:
+        count = _ip_daily_uploads[client_ip][today]
+        if count >= MAX_DAILY_UPLOADS_PER_IP:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"You have reached the daily upload limit of {MAX_DAILY_UPLOADS_PER_IP} "
+                    "documents per IP address. Please try again tomorrow."
+                ),
+                headers={"Retry-After": "86400"},
+            )
+
+
+def increment_ip_daily_uploads(client_ip: str) -> None:
+    """Increment the IP's daily upload counter after a job is accepted."""
+    today = _current_date_str()
+    with _ip_lock:
+        _ip_daily_uploads[client_ip][today] += 1
+
+
+def reset_ip_limiters() -> None:
+    """Clear in-process IP counters. Used by tests only."""
+    with _ip_lock:
+        _ip_request_timestamps.clear()
+        _ip_daily_questions.clear()
+        _ip_daily_uploads.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +323,29 @@ def check_and_increment_daily_llm_tokens(
 
     if current > cfg.daily_max_owner_llm_tokens:
         _raise_demo_at_capacity("owner LLM generation")
+
+
+def check_and_increment_daily_jobs(db: DatabaseManager, cfg: OwnerConfig) -> None:
+    """Atomically increment the daily global ingestion-job counter."""
+    today = _current_date_str()
+    with db._get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO usage_daily (date, chunks_embedded, rerank_calls, owner_llm_tokens, jobs)
+            VALUES (?, 0, 0, 0, 1)
+            ON CONFLICT(date) DO UPDATE SET jobs = jobs + 1
+            """,
+            (today,),
+        )
+        cursor.execute("SELECT jobs FROM usage_daily WHERE date = ?", (today,))
+        row = cursor.fetchone()
+        conn.commit()
+
+    current = row["jobs"] if row else 1
+    _log_budget_alerts("jobs", current, cfg.daily_max_jobs)
+    if current > cfg.daily_max_jobs:
+        _raise_demo_at_capacity("document ingestion")
 
 
 def _raise_demo_at_capacity(resource: str) -> None:
@@ -458,7 +516,14 @@ async def enforce_rate_limits(request: Request) -> None:
     Usage:
         @router.post("/chat", dependencies=[Depends(enforce_rate_limits)])
     """
-    client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
-        request.client.host if request.client else "unknown"
-    )
-    check_ip_rate_limit(client_ip)
+    check_ip_rate_limit(client_ip_from_request(request))
+
+
+def client_ip_from_request(request: Request) -> str:
+    """Best-effort client IP (honours the first X-Forwarded-For hop)."""
+    forwarded = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"

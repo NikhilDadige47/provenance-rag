@@ -47,7 +47,9 @@ def test_api_routes_not_shadowed(client: TestClient) -> None:
     # Health probe
     res_health = client.get("/health")
     assert res_health.status_code == 200
-    assert res_health.json() == {"status": "ok", "version": "1.0.0"}
+    health = res_health.json()
+    assert health["status"] == "ok"
+    assert health["version"] == "1.0.0"
 
     # Examples endpoint
     res_examples = client.get("/examples")

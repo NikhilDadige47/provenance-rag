@@ -17,6 +17,12 @@ from src.security.config import OwnerConfig
 from src.storage.db import DatabaseManager
 
 
+def _upload_form(**fields: str) -> dict[str, str]:
+    data = {"terms_accepted": "true"}
+    data.update(fields)
+    return data
+
+
 def create_minimal_pdf_bytes(title: str = "Test") -> bytes:
     doc = pymupdf.open()
     doc.set_metadata({"title": title})
@@ -49,12 +55,13 @@ def client(tmp_path: Path):
     job_runner.embedder.embed = AsyncMock(side_effect=mock_embed_docs)
     job_runner.embedder.embed_documents = AsyncMock(side_effect=mock_embed_docs)
 
-    app.state.db = db
-    app.state.cfg = cfg
-    app.state.store = store
-    app.state.job_runner = job_runner
-
-    return TestClient(app)
+    with TestClient(app) as client:
+        # Lifespan overwrites app.state; restore the isolated test doubles.
+        app.state.db = db
+        app.state.cfg = cfg
+        app.state.store = store
+        app.state.job_runner = job_runner
+        yield client
 
 
 def test_upload_validate_endpoint(client: TestClient) -> None:
@@ -85,7 +92,7 @@ def test_upload_submit_and_poll_job(client: TestClient) -> None:
 
     pdf_bytes = create_minimal_pdf_bytes("Upload Route Doc")
     files = {"file": ("upload.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
-    data = {"parser": "local_pymupdf", "allow_fallback": "true"}
+    data = _upload_form(parser="local_pymupdf", allow_fallback="true")
 
     # 2. Submit upload
     resp = client.post("/upload", headers=headers, files=files, data=data)
@@ -121,7 +128,7 @@ def test_upload_cloud_parser_requires_key(client: TestClient) -> None:
 
     pdf_bytes = create_minimal_pdf_bytes("Cloud Parser Doc")
     files = {"file": ("cloud.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
-    data = {"parser": "llamaparse"}
+    data = _upload_form(parser="llamaparse")
 
     resp = client.post("/upload", headers=headers, files=files, data=data)
     assert resp.status_code == 400
@@ -136,7 +143,7 @@ def test_upload_auto_does_not_require_visitor_key(client: TestClient) -> None:
 
     pdf_bytes = create_minimal_pdf_bytes("Auto Parser Doc")
     files = {"file": ("auto.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
-    data = {"parser": "auto", "allow_fallback": "true"}
+    data = _upload_form(parser="auto", allow_fallback="true")
 
     resp = client.post("/upload", headers=headers, files=files, data=data)
     assert resp.status_code == 202
@@ -154,7 +161,7 @@ def test_upload_default_parser_is_auto(client: TestClient) -> None:
     pdf_bytes = create_minimal_pdf_bytes("Default Parser Doc")
     files = {"file": ("default.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
 
-    resp = client.post("/upload", headers=headers, files=files)
+    resp = client.post("/upload", headers=headers, files=files, data=_upload_form())
     assert resp.status_code == 202
     assert resp.json()["parser_used"] == "auto"
 
@@ -171,7 +178,7 @@ def test_job_isolation_between_sessions(client: TestClient) -> None:
 
     pdf_bytes = create_minimal_pdf_bytes("Session A Doc")
     files = {"file": ("a.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
-    data = {"parser": "local_pymupdf"}
+    data = _upload_form(parser="local_pymupdf")
 
     resp_a = client.post("/upload", headers=h_a, files=files, data=data)
     job_id_a = resp_a.json()["job_id"]

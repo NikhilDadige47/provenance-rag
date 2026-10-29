@@ -42,6 +42,11 @@ class OwnerConfig(BaseSettings):
     app_env: str = Field(default="development")
     log_level: str = Field(default="INFO")
     debug: bool = Field(default=False)
+    frontend_origin: str = Field(default="http://localhost:5173")
+    cors_origins: str = Field(
+        default="*",
+        description="Comma-separated browser origins. '*' is ignored in production.",
+    )
 
     # Cohere (Owner Embeddings & Reranking)
     cohere_api_key: Secret = Field(default=Secret("co_placeholder"))

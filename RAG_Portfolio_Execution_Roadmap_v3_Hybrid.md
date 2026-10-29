@@ -612,36 +612,36 @@ Priority: **P0** · Complexity: **Medium**
 
 ## Checklist
 
-☐ **P9-T1 🔴 Cost-abuse tests** (P0) · *Depends on: P5-T3, P6-T3*
-  ☐ [45m] Load script: many sessions and IPs hammering `/chat` and `/upload`; confirm caps and daily limits hold
-  ☐ [30m] Confirm "demo at capacity" mode and the kill switch work under load
-  ☐ [30m] Confirm no uncapped path calls Cohere or the owner LLM (review all call sites)
+☑ **P9-T1 🔴 Cost-abuse tests** (P0) · *Depends on: P5-T3, P6-T3*
+  ☑ [45m] Load script: many sessions and IPs hammering `/chat` and `/upload`; confirm caps and daily limits hold
+  ☑ [30m] Confirm "demo at capacity" mode and the kill switch work under load
+  ☑ [30m] Confirm no uncapped path calls Cohere or the owner LLM (review all call sites)
 
-☐ **P9-T2 Abuse protection** (P0) · *Depends on: P9-T1*
-  ☐ [45m] Optional lightweight CAPTCHA before upload
-  ☐ [30m] Parsing timeouts, request body-size caps, cancellation of stuck jobs
-  ☐ [30m] Max concurrent jobs and per-IP daily upload limits verified
+☑ **P9-T2 Abuse protection** (P0) · *Depends on: P9-T1*
+  ☑ [45m] Optional lightweight CAPTCHA before upload — **cut** (scope-cut ladder item 2)
+  ☑ [30m] Parsing timeouts, request body-size caps, cancellation of stuck jobs
+  ☑ [30m] Max concurrent jobs and per-IP daily upload limits verified
 
-☐ **P9-T3 Failure drills** (P1) · *Depends on: P6-T3*
-  ☐ [30m] Kill process mid-job → failed, partial vectors removed, re-submit works
-  ☐ [45m] Simulate invalid/quota/rate-limit/timeout for the parser key and the LLM key → friendly errors, no retries
-  ☐ [45m] Simulate **Cohere Embed outage** (jobs fail cleanly, chat shows "search unavailable") and **Cohere Rerank outage** (hybrid-order fallback)
-  ☐ [30m] Simulate Qdrant unreachable and LLM outage
+☑ **P9-T3 Failure drills** (P1) · *Depends on: P6-T3*
+  ☑ [30m] Kill process mid-job → failed, partial vectors removed, re-submit works
+  ☑ [45m] Simulate invalid/quota/rate-limit/timeout for the parser key and the LLM key → friendly errors, no retries
+  ☑ [45m] Simulate **Cohere Embed outage** (jobs fail cleanly, chat shows "search unavailable") and **Cohere Rerank outage** (hybrid-order fallback)
+  ☑ [30m] Simulate Qdrant unreachable and LLM outage
 
-☐ **P9-T4 🔴 Security review** (P0) · *Depends on: P6-T7*
-  ☐ [45m] Re-run redaction, isolation and egress-allowlist suites against the full stack
-  ☐ [30m] HTTPS-only, HSTS, secure cookies, CORS locked to your frontend origin, strict CSP
-  ☐ [30m] Dependency audit (pip-audit / npm audit); pin versions
-  ☐ [30m] Confirm production holds only **owner secrets in the secret manager** and nothing in the repo or logs
+☑ **P9-T4 🔴 Security review** (P0) · *Depends on: P6-T7*
+  ☑ [45m] Re-run redaction, isolation and egress-allowlist suites against the full stack
+  ☑ [30m] HTTPS-only, HSTS, secure cookies, CORS locked to your frontend origin, strict CSP
+  ☑ [30m] Dependency audit (pip-audit / npm audit); pin versions
+  ☑ [30m] Confirm production holds only **owner secrets in the secret manager** and nothing in the repo or logs
 
-☐ **P9-T5 Privacy-safe observability** (P1) · *Depends on: P7-T6*
-  ☐ [45m] Health endpoint, structured non-secret logs
-  ☐ [30m] Uptime monitor and failure alert
-  ☐ [30m] Metrics: jobs by stage/failure, error codes, latency, daily spend counters (no content)
+☑ **P9-T5 Privacy-safe observability** (P1) · *Depends on: P7-T6*
+  ☑ [45m] Health endpoint, structured non-secret logs
+  ☑ [30m] Uptime monitor and failure alert
+  ☑ [30m] Metrics: jobs by stage/failure, error codes, latency, daily spend counters (no content)
 
-☐ **P9-T6 Terms and privacy text** (P1)
-  ☐ [45m] Terms: right to upload; data goes to the chosen parser, Cohere, and the active LLM provider; retention (TTL); keys transit the server
-  ☐ [30m] Show on first upload with a required checkbox
+☑ **P9-T6 Terms and privacy text** (P1)
+  ☑ [45m] Terms: right to upload; data goes to the chosen parser, Cohere, and the active LLM provider; retention (TTL); keys transit the server
+  ☑ [30m] Show on first upload with a required checkbox
 
 Priority: **P0** · Complexity: **Medium**
 

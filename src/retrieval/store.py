@@ -271,6 +271,14 @@ class QdrantVectorStore(IVectorStore):
             ),
         )
 
+    def ping(self) -> bool:
+        """Return True when the Qdrant client can list collections."""
+        try:
+            self._client.get_collections()
+            return True
+        except Exception:
+            return False
+
     def delete_by_doc(self, doc_id: str) -> None:
         """Delete all points associated with a specific document ID."""
         self._client.delete(

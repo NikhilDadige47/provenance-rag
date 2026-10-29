@@ -39,14 +39,25 @@ from src.security.credit_config import (
     GLOBAL_PARSE_CACHE_VERSION,
     PARSE_CACHE_TTL_SECONDS,
 )
-from src.security.errors import InvalidKeyError, QuotaExhaustedError, RateLimitedError
+from src.security.errors import (
+    InvalidKeyError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+    QuotaExhaustedError,
+    RateLimitedError,
+)
 from src.security.secret import Secret
+from src.api.observability import record_job_status
 from src.storage.db import DatabaseManager
 
 logger = logging.getLogger("provenance_rag.api.jobs")
 
 # Max concurrent heavy background ingestion pipelines
 DEFAULT_MAX_CONCURRENCY = 2
+# Extra jobs allowed to wait on the semaphore before the API returns 429
+DEFAULT_MAX_QUEUED = 2
+# Wall-clock timeout for a single ingest (matches frontend INGEST_TIMEOUT_MS)
+DEFAULT_JOB_TIMEOUT_SECONDS = 8 * 60
 
 
 class JobRunner:
@@ -58,11 +69,15 @@ class JobRunner:
         store: QdrantVectorStore,
         cfg: OwnerConfig,
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+        job_timeout_seconds: float = DEFAULT_JOB_TIMEOUT_SECONDS,
     ) -> None:
         self.db = db
         self.store = store
         self.cfg = cfg
         self._semaphore = asyncio.Semaphore(max_concurrency)
+        self._max_concurrency = max_concurrency
+        self._max_queued = DEFAULT_MAX_QUEUED
+        self._job_timeout_seconds = job_timeout_seconds
         self.chunker = HybridChunker(ChunkingConfig())
         self.embedder = CohereEmbedder(cfg.cohere_api_key)
         self.sparse_vectorizer = LocalSparseVectorizer()
@@ -114,16 +129,35 @@ class JobRunner:
     ) -> None:
         """Run complete ingestion pipeline in background under concurrency semaphore."""
         async with self._semaphore:
-            await self._execute_pipeline(
-                job_id=job_id,
-                session_id=session_id,
-                filename=filename,
-                file_bytes=file_bytes,
-                parser_name=parser_name,
-                parser_key=parser_key,
-                allow_fallback=allow_fallback,
-                client_ip=client_ip,
-            )
+            try:
+                await asyncio.wait_for(
+                    self._execute_pipeline(
+                        job_id=job_id,
+                        session_id=session_id,
+                        filename=filename,
+                        file_bytes=file_bytes,
+                        parser_name=parser_name,
+                        parser_key=parser_key,
+                        allow_fallback=allow_fallback,
+                        client_ip=client_ip,
+                    ),
+                    timeout=self._job_timeout_seconds,
+                )
+            except TimeoutError:
+                logger.error(f"Ingestion timed out [{job_id}] after {self._job_timeout_seconds}s")
+                self._mark_job_failed(
+                    job_id,
+                    session_id,
+                    "Ingestion timed out. Partial index data was removed. Please retry.",
+                )
+            except asyncio.CancelledError:
+                logger.warning(f"Ingestion cancelled [{job_id}]")
+                self._mark_job_failed(
+                    job_id,
+                    session_id,
+                    "Ingestion was cancelled. Partial index data was removed. Please retry.",
+                )
+                raise
 
     async def _execute_pipeline(
         self,
@@ -325,9 +359,21 @@ class JobRunner:
                 quality_flags=quality_flags_str,
                 doc_id=doc_id,
             )
+            record_job_status("ready")
             logger.info(
                 f"Ingestion succeeded [{job_id}]: doc_id={doc_id} pages={structured_doc.page_count} chunks={len(children)}"
             )
+
+        except asyncio.CancelledError:
+            logger.warning(f"Ingestion cancelled during execute [{job_id}]")
+            self._rollback_partial(doc_id, session_id)
+            self.db.update_job(
+                job_id=job_id,
+                status="failed",
+                error_message="Ingestion was cancelled or timed out. Partial index data was removed. Please retry.",
+                doc_id=doc_id,
+            )
+            raise
 
         except Exception as exc:
             logger.error(f"Ingestion failed [{job_id}]: {type(exc).__name__}: {exc}", exc_info=True)
@@ -346,6 +392,7 @@ class JobRunner:
                 error_message=friendly_error,
                 doc_id=doc_id,
             )
+            record_job_status("failed")
 
         finally:
             # 🔴 CRITICAL SECURITY INVARIANT: Shred visitor parser secret from memory
@@ -477,15 +524,43 @@ class JobRunner:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO usage_daily (date, chunks_embedded, jobs)
-                VALUES (?, ?, 1)
+                INSERT INTO usage_daily (date, chunks_embedded, rerank_calls, owner_llm_tokens, jobs)
+                VALUES (?, ?, 0, 0, 0)
                 ON CONFLICT(date) DO UPDATE SET
-                    chunks_embedded = chunks_embedded + excluded.chunks_embedded,
-                    jobs = jobs + 1
+                    chunks_embedded = chunks_embedded + excluded.chunks_embedded
                 """,
                 (today_str, len(children)),
             )
             conn.commit()
+
+    def _rollback_partial(self, doc_id: str, session_id: str) -> None:
+        """Delete any partial vectors/SQL rows for a failed or cancelled job."""
+        try:
+            self.store.delete_by_doc(doc_id)
+        except Exception as rollback_exc:
+            logger.warning(f"Vector rollback error for {doc_id}: {rollback_exc}")
+        try:
+            self.db.delete_document(doc_id, session_id)
+        except Exception as rollback_exc:
+            logger.warning(f"SQL rollback error for {doc_id}: {rollback_exc}")
+
+    def _mark_job_failed(self, job_id: str, session_id: str, message: str) -> None:
+        job = self.db.get_job(job_id, session_id=session_id) or {}
+        if job.get("status") in {"ready", "failed"}:
+            return
+        doc_id = job.get("doc_id")
+        if doc_id:
+            self._rollback_partial(doc_id, session_id)
+        self.db.update_job(job_id=job_id, status="failed", error_message=message, doc_id=doc_id)
+        record_job_status("failed")
+
+    @property
+    def inflight_count(self) -> int:
+        return len(self._tasks)
+
+    def can_accept_job(self) -> bool:
+        """Reject new uploads once running + queued ingest tasks fill the buffer."""
+        return self.inflight_count < (self._max_concurrency + self._max_queued)
 
     def _format_error(self, exc: Exception) -> str:
         """Format friendly error messages without leaking provider keys or internals."""
@@ -497,6 +572,15 @@ class JobRunner:
             return f"Parser quota exceeded: {exc.message}. Please check your account balance."
         if isinstance(exc, RateLimitedError):
             return "Parser provider is currently rate-limited. Please retry in a few moments."
+        if isinstance(exc, ProviderTimeoutError):
+            return (
+                f"{exc.provider} timed out. The document was not indexed. "
+                "Please retry; visitor keys are never retried automatically."
+            )
+        if isinstance(exc, ProviderUnavailableError):
+            if exc.provider.lower() == "cohere":
+                return "Search embeddings are unavailable. The document was not indexed. Please retry later."
+            return f"{exc.provider} is unavailable. The document was not indexed. Please retry later."
         if isinstance(exc, TimeoutError):
             return str(exc) or "Ingestion timed out while indexing vectors. Please retry."
         return f"Ingestion error: {exc}"

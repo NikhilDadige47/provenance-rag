@@ -1241,8 +1241,14 @@ python -m src.cli ask "What is Acme Corporation's debt-to-equity ratio?" --disab
   - [x] `src/security/tracing.py` (Privacy-preserving distributed tracing: full content for demo/eval, strictly metadata-only for visitor documents)
   - [x] `eval/results/` (Publication-ready markdown and JSON benchmark reports)
   - [x] 9 new Phase 7 unit tests (175 total passing tests across the repo)
-- [ ] *Up Next:* **Phase 8: Frontend (Modern UI with Live Usage Meter)**
-- [ ] *Up Next:* **Phase 9: Hardening, Abuse & Failure Drills**
+- [x] **Phase 8: Frontend (Modern UI with Live Usage Meter)**
+- [x] **Phase 9: Hardening, Abuse & Failure Drills**
+  - [x] Cost-abuse tests + `scripts/abuse_chat.py` (session/IP/daily caps, kill switch, no uncapped Cohere/LLM path)
+  - [x] Daily upload cap, ingest job timeout/cancel, concurrent job queue cap, body-size reject (CAPTCHA cut)
+  - [x] Failure drills: mid-job cancel, parser/LLM/embed/Qdrant outages, rerank hybrid fallback
+  - [x] Production CORS/HSTS/CSP, HTTPS-only, HttpOnly session cookie, `/health` readiness, `/metrics` (no content), `/terms`
+  - [x] First-upload terms checkbox (UI + API gate)
+  - [x] `scripts/health_check.py` uptime probe and `scripts/audit_deps.py` (pip-audit / npm audit)
 - [ ] *Up Next:* **Phase 10: Production Deployment & Smoke Tests**
 - [ ] *Up Next:* **Phase 11: Demo Video, Results & Launch**
 

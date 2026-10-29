@@ -91,7 +91,7 @@ def test_parser_key_never_leaks_in_logs_db_or_responses(
 
     # 3. Test POST /upload with fake key
     files = {"file": ("audit.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
-    data = {"parser": "llamaparse", "allow_fallback": "true"}
+    data = {"parser": "llamaparse", "allow_fallback": "true", "terms_accepted": "true"}
 
     with patch(
         "src.ingest.parsers.llamaparse.LlamaParseAdapter.parse",

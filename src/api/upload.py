@@ -29,12 +29,20 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from src.api.caps import check_ip_rate_limit, check_kill_switch_uploads
+from src.api.caps import (
+    check_and_increment_daily_jobs,
+    check_ip_daily_upload_limit,
+    check_ip_rate_limit,
+    check_kill_switch_uploads,
+    client_ip_from_request,
+    increment_ip_daily_uploads,
+)
 from src.api.connections import verify_provider_connection
 from src.api.jobs import JobRunner
 from src.api.lifecycle import delete_document, delete_session
 from src.api.sessions import SessionState, get_current_session
 from src.api.upload_validation import (
+    MAX_UPLOAD_SIZE_BYTES,
     UploadEstimateResponse,
     build_upload_estimate,
     validate_pdf_upload,
@@ -207,6 +215,10 @@ async def upload_document(
     allow_fallback: bool = Form(
         True, description="Automatically re-parse locally if cloud parser fails"
     ),
+    terms_accepted: bool = Form(
+        False,
+        description="Visitor confirmed they have the right to upload and accept data routing",
+    ),
     session: SessionState = Depends(get_current_session),
     x_parser_key: str | None = Header(None, alias="X-Parser-Key"),
 ) -> JobSubmitResponse:
@@ -223,9 +235,28 @@ async def upload_document(
     # 1. Kill switch check
     check_kill_switch_uploads(cfg)
 
-    # 2. Rate limit check (30 req/min per IP)
-    client_ip = request.client.host if request.client else "unknown"
+    # 2. Rate limit + daily upload cap (before reading a large body)
+    client_ip = client_ip_from_request(request)
     check_ip_rate_limit(client_ip)
+    check_ip_daily_upload_limit(client_ip)
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            # Multipart overhead is small; reject obviously oversized bodies early.
+            if int(content_length) > MAX_UPLOAD_SIZE_BYTES + (2 * 1024 * 1024):
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Upload exceeds the 10MB limit.",
+                )
+        except ValueError:
+            pass
+
+    if not terms_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must accept the upload terms before submitting a document.",
+        )
 
     # 3. Read uploaded bytes
     file_bytes = await file.read()
@@ -254,6 +285,18 @@ async def upload_document(
             ),
         )
 
+    runner: JobRunner = getattr(request.app.state, "job_runner", None)
+    if not runner:
+        runner = JobRunner(db=db, store=store, cfg=cfg)
+        request.app.state.job_runner = runner
+    if not runner.can_accept_job():
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many documents are being processed. Please wait and retry.",
+        )
+
+    check_and_increment_daily_jobs(db, cfg)
+
     # 6. Create job in SQLite
     job_id = "job_" + uuid.uuid4().hex[:12]
     db.create_job(
@@ -263,11 +306,7 @@ async def upload_document(
         status="queued",
     )
 
-    # 7. Initialize JobRunner singleton on app.state
-    runner: JobRunner = getattr(request.app.state, "job_runner", None)
-    if not runner:
-        runner = JobRunner(db=db, store=store, cfg=cfg)
-        request.app.state.job_runner = runner
+    increment_ip_daily_uploads(client_ip)
 
     # 8. Fire background task with a strong reference so it cannot be GC'd
     runner.spawn_ingestion_pipeline(

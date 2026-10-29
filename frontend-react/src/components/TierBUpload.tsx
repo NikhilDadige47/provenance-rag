@@ -58,6 +58,13 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [termsAccepted, setTermsAccepted] = useState(() => {
+    try {
+      return sessionStorage.getItem('provenance_terms_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
 
   // Optional BYOK State (activates TierCKeys within the upload workflow)
   const [useCustomKey, setUseCustomKey] = useState(false);
@@ -105,6 +112,10 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
     }
     if (file.size > 10 * 1024 * 1024) {
       onToast('File size exceeds the 10MB limit.', 'error');
+      return;
+    }
+    if (!termsAccepted) {
+      onToast('Accept the upload terms before submitting a document.', 'warning');
       return;
     }
 
@@ -163,12 +174,18 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
               startIngestionForFile(e.dataTransfer.files[0]);
             }
           }}
-          onClick={() => !isUploading && !atDocCap && !atPageCap && fileInputRef.current?.click()}
+          onClick={() =>
+            !isUploading &&
+            !atDocCap &&
+            !atPageCap &&
+            termsAccepted &&
+            fileInputRef.current?.click()
+          }
           className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
             dragActive
               ? 'border-primary bg-primary/5'
               : 'border-border/80 hover:border-primary/50 hover:bg-muted/20'
-          } ${isUploading || atDocCap || atPageCap ? 'opacity-50 pointer-events-none' : ''}`}
+          } ${isUploading || atDocCap || atPageCap || !termsAccepted ? 'opacity-50 pointer-events-none' : ''}`}
         >
           <input
             ref={fileInputRef}
@@ -197,6 +214,31 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             PDF files only (max 10MB, up to {quota.pagesMax} pages)
           </p>
         </div>
+
+        <label className="flex items-start gap-2 cursor-pointer text-xs text-muted-foreground select-none">
+          <input
+            type="checkbox"
+            checked={termsAccepted}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setTermsAccepted(next);
+              try {
+                sessionStorage.setItem('provenance_terms_v1', next ? '1' : '0');
+              } catch {
+                /* ignore quota / private mode */
+              }
+            }}
+            className="size-3.5 mt-0.5 rounded border-border text-primary accent-primary cursor-pointer"
+          />
+          <span>
+            I have the right to upload this file. Text may be sent to the selected parser, Cohere,
+            and the active LLM. The session is wiped on TTL or delete. Visitor keys transit the
+            server in memory only.{' '}
+            <a href="/terms" target="_blank" rel="noreferrer" className="text-primary underline">
+              Full terms
+            </a>
+          </span>
+        </label>
 
         {/* Live Upload & Indexing Progress */}
         {uploadProgress && (
