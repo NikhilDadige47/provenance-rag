@@ -88,7 +88,7 @@ def test_production_https_and_hsts() -> None:
         assert "https" in blocked.json()["detail"].lower()
         allowed = client.get("/metrics", headers={"X-Forwarded-Proto": "https"})
         assert allowed.status_code == 200
-        assert "strict-transport-security" in {k.lower() for k in allowed.headers.keys()}
+        assert "strict-transport-security" in {k.lower() for k in allowed.headers}
         assert "max-age" in allowed.headers["strict-transport-security"].lower()
     finally:
         cfg.app_env = previous

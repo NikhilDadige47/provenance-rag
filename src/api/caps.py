@@ -79,7 +79,7 @@ def _canonical_ip(client_ip: str) -> str:
 
 def _hash_ip(client_ip: str) -> str:
     """Store a digest, never the raw address."""
-    return hashlib.sha256(f"provenance-ip-v1:{_canonical_ip(client_ip)}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"provenance-ip-v1:{_canonical_ip(client_ip)}".encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------

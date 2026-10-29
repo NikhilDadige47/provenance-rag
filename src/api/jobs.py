@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pymupdf
 
+from src.api.observability import record_job_status
 from src.ingest.chunking.hybrid_chunker import HybridChunker
 from src.ingest.chunking.models import ChildChunk, ChunkingConfig, ParentChunk
 from src.ingest.parsers.local_pymupdf import LocalPyMuPDFParser, extract_raw_reference_text
@@ -47,7 +48,6 @@ from src.security.errors import (
     RateLimitedError,
 )
 from src.security.secret import Secret
-from src.api.observability import record_job_status
 from src.storage.db import DatabaseManager
 
 logger = logging.getLogger("provenance_rag.api.jobs")

@@ -49,7 +49,7 @@ class TokenUsage:
 def consume_usage(llm: ILLM, prompt: str = "", completion: str = "") -> TokenUsage:
     """Return usage from the last stream, falling back to a local estimate."""
     usage = getattr(llm, "_last_usage", None)
-    setattr(llm, "_last_usage", TokenUsage())
+    llm._last_usage = TokenUsage()
     if isinstance(usage, TokenUsage) and usage.total_tokens > 0:
         return usage
     from src.ingest.chunking.tokenizer import estimate_tokens

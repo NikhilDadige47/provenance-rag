@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pymupdf
 import pytest
 
-from src.ingest.parsers.landingai import LandingAIAdapter, LandingAINormalizer, extract_landing_credit_units
+from src.ingest.parsers.landingai import (
+    LandingAIAdapter,
+    LandingAINormalizer,
+    extract_landing_credit_units,
+)
 from src.ingest.parsers.structured_doc import BlockType
 from src.security.credit_config import LANDING_JOBS_CREATE_URL, LANDING_SERVICE_TIER
 from src.security.secret import Secret
