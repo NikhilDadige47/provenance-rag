@@ -19,6 +19,7 @@ ALLOWED_EGRESS_HOSTS: frozenset[str] = frozenset(
         "api.cloud.llamaindex.ai",
         "api.landing.ai",
         "api.va.landing.ai",
+        "api.ade.landing.ai",
         "api.unstructured.io",
         "api.groq.com",
         "api.openai.com",

@@ -50,7 +50,7 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
     {
       id: 'limits' as NavItem,
       title: 'Limits & Cost Quotas',
-      subtitle: 'Spend & safety gates',
+      subtitle: 'Questions, docs & session TTL',
       icon: Gauge,
       tag: 'Active',
     },

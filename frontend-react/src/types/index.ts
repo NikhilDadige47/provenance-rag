@@ -42,7 +42,15 @@ export interface UsageInfo {
   rerank_calls_used: number;
   rerank_calls_max: number;
   at_capacity: boolean;
+  owner_questions_exhausted: boolean;
   session_expires_at: string;
+  session_ttl_seconds: number;
+  session_docs_used: number;
+  session_docs_max: number;
+  session_pages_used: number;
+  session_pages_max: number;
+  daily_questions_per_ip_max: number;
+  requests_per_minute_max: number;
   owner_llm_provider?: string;
   owner_llm_model?: string;
 }
@@ -61,6 +69,8 @@ export interface UploadedDoc {
   parser_tier: string;
   uploaded_at: string;
   page_count?: number;
+  degraded?: boolean;
+  quality_warnings?: string[];
 }
 
 export interface CostEstimate {

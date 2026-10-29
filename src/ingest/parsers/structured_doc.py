@@ -66,6 +66,14 @@ class StructuredDoc(BaseModel):
         default=None,
         description="Optional full reference text for quality gate checks",
     )
+    credits_units: int | None = Field(
+        default=None,
+        description=(
+            "Actual billed parser credits in ledger units (Landing tenths, LlamaParse credits). "
+            "None means the adapter did not observe a bill; the router should keep the reservation."
+        ),
+    )
+    failed_pages: list[int] = Field(default_factory=list)
 
     def get_headings(self) -> list[Block]:
         """Return all heading blocks in reading order."""

@@ -10,6 +10,7 @@ from src.generation.llm import (
     GroqLLM,
     MistralLLM,
     OpenAILLM,
+    consume_usage,
     get_llm_adapter,
 )
 from src.security.errors import InvalidKeyError
@@ -24,6 +25,7 @@ async def test_groq_llm_streaming_success():
     sse_lines = [
         'data: {"choices": [{"delta": {"content": "Hello"}}]}',
         'data: {"choices": [{"delta": {"content": " world"}}]}',
+        'data: {"choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 4, "total_tokens": 16}}',
         "data: [DONE]",
     ]
 
@@ -43,6 +45,10 @@ async def test_groq_llm_streaming_success():
             tokens.append(token)
 
         assert "".join(tokens) == "Hello world"
+        usage = consume_usage(llm)
+        assert usage.prompt_tokens == 12
+        assert usage.completion_tokens == 4
+        assert usage.total_tokens == 16
 
 
 @pytest.mark.asyncio

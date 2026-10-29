@@ -84,14 +84,14 @@ def test_delete_session_wipes_all_data(lifecycle_env) -> None:
     assert db.get_session(session_id) is None
     assert db.get_document(doc_id) is None
     assert db.get_job("job_p1") is None
+    # Global parse cache is keyed by file hash and must survive session wipe
     assert (
         db.get_parse_cache(
-            session_id=session_id,
             content_hash="abc123hash",
             parser="local_pymupdf",
             parser_version="1.0",
         )
-        is None
+        is not None
     )
 
 

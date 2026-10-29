@@ -22,13 +22,15 @@ Only metadata (request_id, tier, timings, counts) is logged.
 import json
 import logging
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from src.api.caps import (
-    check_and_increment_daily_llm_tokens,
+    MAX_DAILY_QUESTIONS_PER_IP,
+    MAX_REQUESTS_PER_WINDOW,
     check_and_increment_daily_rerank,
     check_and_increment_session_byok_llm,
     check_and_increment_session_owner_llm,
@@ -44,14 +46,22 @@ from src.api.logging import (
 )
 from src.api.sessions import CurrentSession, VisitorLLMKeys
 from src.generation.citations import audit_citations, normalize_citation_markers
-from src.generation.llm import get_llm_adapter
+from src.generation.llm import consume_usage, get_llm_adapter
 from src.generation.prompt import build_generation_prompt, validate_question
 from src.generation.rewrite import rewrite_query_if_needed
 from src.retrieval.expansion import ContextExpander
 from src.retrieval.search import HybridSearchPipeline
 from src.security.config import OwnerConfig
 from src.security.errors import InvalidKeyError, QuotaExhaustedError
+from src.security.ledger import Ledger
 from src.security.secret import Secret
+from src.security.token_meter import (
+    commit_owner_llm_tokens,
+    estimate_generation_reserve,
+    estimate_rewrite_reserve,
+    release_owner_llm_tokens,
+    reserve_owner_llm_tokens,
+)
 from src.storage.db import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -228,7 +238,15 @@ class UsageResponse(BaseModel):
     rerank_calls_used: int
     rerank_calls_max: int
     at_capacity: bool
+    owner_questions_exhausted: bool
     session_expires_at: str
+    session_ttl_seconds: int
+    session_docs_used: int
+    session_docs_max: int
+    session_pages_used: int
+    session_pages_max: int
+    daily_questions_per_ip_max: int
+    requests_per_minute_max: int
     owner_llm_provider: str
     owner_llm_model: str
 
@@ -304,27 +322,48 @@ async def get_usage(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
 
     row_dict = dict(row)
-    q_owner_used = row_dict.get("questions_owner_llm", 0)
-    q_own_used = row_dict.get("questions_own_llm", 0)
-    rerank_used = row_dict.get("rerank_calls", 0)
+    q_owner_used = int(row_dict.get("questions_owner_llm", 0) or 0)
+    q_own_used = int(row_dict.get("questions_own_llm", 0) or 0)
+    rerank_used = int(row_dict.get("rerank_calls", 0) or 0)
+    docs_used = int(row_dict.get("docs_count", 0) or 0)
+    pages_used = int(row_dict.get("pages_used", 0) or 0)
     q_owner_max = cfg.session_max_questions_owner_llm
     q_own_max = cfg.session_max_questions_own_llm
     rerank_max = cfg.session_max_rerank_calls
+    owner_remaining = max(0, q_owner_max - q_owner_used)
+    own_remaining = max(0, q_own_max - q_own_used)
+    at_capacity = owner_remaining == 0 and own_remaining == 0
 
-    at_capacity = q_owner_used >= q_owner_max and q_own_used >= q_own_max
+    expires_at = session.expires_at or row_dict.get("expires_at") or ""
+    ttl_seconds = 0
+    try:
+        exp_dt = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=UTC)
+        ttl_seconds = max(0, int((exp_dt - datetime.now(UTC)).total_seconds()))
+    except (TypeError, ValueError):
+        ttl_seconds = int(cfg.session_ttl_hours * 3600)
 
     return UsageResponse(
         tier=session.tier.value,
         questions_owner_llm_used=q_owner_used,
         questions_owner_llm_max=q_owner_max,
-        questions_owner_llm_remaining=max(0, q_owner_max - q_owner_used),
+        questions_owner_llm_remaining=owner_remaining,
         questions_own_llm_used=q_own_used,
         questions_own_llm_max=q_own_max,
-        questions_own_llm_remaining=max(0, q_own_max - q_own_used),
+        questions_own_llm_remaining=own_remaining,
         rerank_calls_used=rerank_used,
         rerank_calls_max=rerank_max,
         at_capacity=at_capacity,
-        session_expires_at=session.expires_at,
+        owner_questions_exhausted=owner_remaining == 0,
+        session_expires_at=expires_at,
+        session_ttl_seconds=ttl_seconds,
+        session_docs_used=docs_used,
+        session_docs_max=cfg.session_max_documents,
+        session_pages_used=pages_used,
+        session_pages_max=cfg.session_max_total_pages,
+        daily_questions_per_ip_max=MAX_DAILY_QUESTIONS_PER_IP,
+        requests_per_minute_max=MAX_REQUESTS_PER_WINDOW,
         owner_llm_provider=cfg.default_llm_provider,
         owner_llm_model=cfg.default_llm_model,
     )
@@ -367,6 +406,7 @@ async def chat(
 
     cfg: OwnerConfig = request.app.state.cfg
     db: DatabaseManager = request.app.state.db
+    ledger: Ledger = getattr(request.app.state, "ledger", None) or Ledger(db.db_path)
 
     # Scope is always derived server-side from the validated session token
     scope = session.scope
@@ -428,14 +468,39 @@ async def chat(
 
     # ── Step 1: Conditional query rewrite (follow-ups only) ────────────────
     t0 = time.time()
+    rewrite_buckets = []
     try:
+        if history_dicts and not using_visitor_key:
+            rewrite_est = estimate_rewrite_reserve(body.question, history_dicts)
+            rewrite_buckets = await reserve_owner_llm_tokens(
+                ledger, session.session_id, client_ip, rewrite_est, cfg
+            )
         effective_query = await rewrite_query_if_needed(
             query=body.question,
             history=history_dicts,
             llm=llm,
             api_key=llm_secret,
         )
+        if rewrite_buckets:
+            rewrite_usage = consume_usage(
+                llm, prompt=body.question, completion=effective_query
+            )
+            await commit_owner_llm_tokens(
+                ledger,
+                rewrite_buckets,
+                rewrite_usage,
+                db,
+                cfg,
+                session.session_id,
+            )
+            rewrite_buckets = []
+    except HTTPException:
+        if rewrite_buckets:
+            await release_owner_llm_tokens(ledger, rewrite_buckets)
+        raise
     except Exception:
+        if rewrite_buckets:
+            await release_owner_llm_tokens(ledger, rewrite_buckets)
         effective_query = body.question  # safe fallback
     timings["rewrite_ms"] = round((time.time() - t0) * 1000, 1)
 
@@ -497,16 +562,30 @@ async def chat(
         passages=expansion_res.passages,
     )
 
-    # ── Step 5: Stream generation ───────────────────────────────────────────
+    # ── Step 5: Reserve owner tokens, then stream generation ───────────────
     t0 = time.time()
     answer_tokens: list[str] = []
     generation_failed = False
+    gen_buckets = []
+    tokens_used = 0
 
     try:
+        if not using_visitor_key:
+            gen_est = estimate_generation_reserve(user_prompt)
+            gen_buckets = await reserve_owner_llm_tokens(
+                ledger, session.session_id, client_ip, gen_est, cfg
+            )
         async for token in llm.generate_stream(user_prompt, api_key=llm_secret):
             answer_tokens.append(token)
+    except HTTPException:
+        if gen_buckets:
+            await release_owner_llm_tokens(ledger, gen_buckets)
+        raise
     except (InvalidKeyError, QuotaExhaustedError) as exc:
         generation_failed = True
+        if gen_buckets:
+            await release_owner_llm_tokens(ledger, gen_buckets)
+            gen_buckets = []
         logger.warning(f"Visitor key error [{request_id}]: {exc.message}")
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -518,6 +597,9 @@ async def chat(
         ) from exc
     except Exception as exc:
         generation_failed = True
+        if gen_buckets:
+            await release_owner_llm_tokens(ledger, gen_buckets)
+            gen_buckets = []
         logger.error(f"Generation error [{request_id}]: {type(exc).__name__}")
         answer_tokens = [
             "Generation is temporarily unavailable. Please refer to the verified sources below."
@@ -526,12 +608,14 @@ async def chat(
     timings["generation_ms"] = round((time.time() - t0) * 1000, 1)
     full_answer = normalize_citation_markers("".join(answer_tokens).strip())
 
-    # Rough token estimate: ~1 token per 4 characters
-    estimated_tokens = max(1, len(full_answer) // 4)
-
-    # ── Gate 7: Daily LLM token cap (only for owner-funded calls) ──────────
-    if not using_visitor_key and not generation_failed:
-        check_and_increment_daily_llm_tokens(db, estimated_tokens, cfg)
+    if not generation_failed:
+        usage = consume_usage(llm, prompt=user_prompt, completion=full_answer)
+        if gen_buckets:
+            tokens_used = await commit_owner_llm_tokens(
+                ledger, gen_buckets, usage, db, cfg, session.session_id
+            )
+        else:
+            tokens_used = usage.total_tokens
 
     # ── Step 6: Citation audit ──────────────────────────────────────────────
     t0 = time.time()
@@ -578,7 +662,7 @@ async def chat(
         answer_length=len(full_answer),
         source_count=len(sources),
         timings=timings,
-        tokens_used=estimated_tokens,
+        tokens_used=tokens_used,
     )
 
     return ChatResponse(

@@ -7,11 +7,15 @@ Implements roadmap P4-T5 & architecture §5, §7:
 - Factory resolving owner default vs visitor key
 - Stream token generator supporting real-time terminal & browser updates
 - Fail-fast error taxonomy for visitor key authentication errors
+- Prompt + completion usage captured from provider stream metadata
 """
+
+from __future__ import annotations
 
 import json
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from src.interfaces import ILLM
 from src.security.config import OwnerConfig
@@ -30,7 +34,48 @@ DEFAULT_OUTPUT_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.1
 
 
-async def _iter_openai_sse(response: object) -> AsyncIterator[str]:
+@dataclass
+class TokenUsage:
+    """Prompt + completion tokens reported by a provider (or estimated as fallback)."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return int(self.prompt_tokens or 0) + int(self.completion_tokens or 0)
+
+
+def consume_usage(llm: ILLM, prompt: str = "", completion: str = "") -> TokenUsage:
+    """Return usage from the last stream, falling back to a local estimate."""
+    usage = getattr(llm, "_last_usage", None)
+    setattr(llm, "_last_usage", TokenUsage())
+    if isinstance(usage, TokenUsage) and usage.total_tokens > 0:
+        return usage
+    from src.ingest.chunking.tokenizer import estimate_tokens
+
+    return TokenUsage(
+        prompt_tokens=estimate_tokens(prompt) if prompt else 0,
+        completion_tokens=estimate_tokens(completion) if completion else 0,
+    )
+
+
+def _usage_from_openai_dict(raw: dict | None) -> TokenUsage | None:
+    if not isinstance(raw, dict):
+        return None
+    prompt = int(raw.get("prompt_tokens") or raw.get("input_tokens") or 0)
+    completion = int(raw.get("completion_tokens") or raw.get("output_tokens") or 0)
+    if prompt <= 0 and completion <= 0:
+        total = int(raw.get("total_tokens") or 0)
+        if total <= 0:
+            return None
+        return TokenUsage(prompt_tokens=total, completion_tokens=0)
+    return TokenUsage(prompt_tokens=prompt, completion_tokens=completion)
+
+
+async def _iter_openai_sse(
+    response: object, usage_sink: list[TokenUsage] | None = None
+) -> AsyncIterator[str]:
     """Yield text deltas from an OpenAI-compatible SSE chat stream."""
     async for line in response.aiter_lines():  # type: ignore[attr-defined]
         line = line.strip()
@@ -41,15 +86,18 @@ async def _iter_openai_sse(response: object) -> AsyncIterator[str]:
             break
         try:
             chunk = json.loads(data_str)
-            choices = chunk.get("choices", [])
-            if not choices:
-                continue
-            delta = choices[0].get("delta", {})
-            content = delta.get("content", "")
-            if content:
-                yield content
         except json.JSONDecodeError:
             continue
+        parsed = _usage_from_openai_dict(chunk.get("usage"))
+        if parsed is not None and usage_sink is not None:
+            usage_sink.append(parsed)
+        choices = chunk.get("choices", [])
+        if not choices:
+            continue
+        delta = choices[0].get("delta", {})
+        content = delta.get("content", "")
+        if content:
+            yield content
 
 
 class GroqLLM(ILLM):
@@ -93,8 +141,10 @@ class GroqLLM(ILLM):
             "max_tokens": DEFAULT_OUTPUT_TOKENS,
             "temperature": DEFAULT_TEMPERATURE,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
 
+        usage_sink: list[TokenUsage] = []
         async with self._http_client.stream(
             "POST",
             "https://api.groq.com/openai/v1/chat/completions",
@@ -109,8 +159,10 @@ class GroqLLM(ILLM):
             if response.status_code != 200:
                 raise ProviderUnavailableError(provider="groq", status_code=response.status_code)
 
-            async for content in _iter_openai_sse(response):
+            async for content in _iter_openai_sse(response, usage_sink):
                 yield content
+        if usage_sink:
+            self._last_usage = usage_sink[-1]
 
 
 class OpenAILLM(ILLM):
@@ -153,8 +205,10 @@ class OpenAILLM(ILLM):
             "max_tokens": DEFAULT_OUTPUT_TOKENS,
             "temperature": DEFAULT_TEMPERATURE,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
 
+        usage_sink: list[TokenUsage] = []
         async with self._http_client.stream(
             "POST",
             "https://api.openai.com/v1/chat/completions",
@@ -169,8 +223,10 @@ class OpenAILLM(ILLM):
             if response.status_code != 200:
                 raise ProviderUnavailableError(provider="openai", status_code=response.status_code)
 
-            async for content in _iter_openai_sse(response):
+            async for content in _iter_openai_sse(response, usage_sink):
                 yield content
+        if usage_sink:
+            self._last_usage = usage_sink[-1]
 
 
 class AnthropicLLM(ILLM):
@@ -232,6 +288,8 @@ class AnthropicLLM(ILLM):
                     provider="anthropic", status_code=response.status_code
                 )
 
+            prompt_tokens = 0
+            completion_tokens = 0
             async for line in response.aiter_lines():
                 line = line.strip()
                 if not line or not line.startswith("data: "):
@@ -239,14 +297,26 @@ class AnthropicLLM(ILLM):
                 data_str = line[len("data: ") :].strip()
                 try:
                     chunk = json.loads(data_str)
-                    event_type = chunk.get("type")
-                    if event_type == "content_block_delta":
-                        delta = chunk.get("delta", {})
-                        text = delta.get("text", "")
-                        if text:
-                            yield text
                 except json.JSONDecodeError:
                     continue
+                event_type = chunk.get("type")
+                if event_type == "message_start":
+                    msg_usage = (chunk.get("message") or {}).get("usage") or {}
+                    prompt_tokens = int(msg_usage.get("input_tokens") or 0)
+                    completion_tokens = int(msg_usage.get("output_tokens") or 0)
+                elif event_type == "message_delta":
+                    delta_usage = chunk.get("usage") or {}
+                    if "output_tokens" in delta_usage:
+                        completion_tokens = int(delta_usage.get("output_tokens") or completion_tokens)
+                elif event_type == "content_block_delta":
+                    delta = chunk.get("delta", {})
+                    text = delta.get("text", "")
+                    if text:
+                        yield text
+            if prompt_tokens or completion_tokens:
+                self._last_usage = TokenUsage(
+                    prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
+                )
 
 
 class MistralLLM(ILLM):
@@ -288,8 +358,10 @@ class MistralLLM(ILLM):
             "max_tokens": DEFAULT_OUTPUT_TOKENS,
             "temperature": DEFAULT_TEMPERATURE,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
 
+        usage_sink: list[TokenUsage] = []
         async with self._http_client.stream(
             "POST",
             "https://api.mistral.ai/v1/chat/completions",
@@ -303,8 +375,10 @@ class MistralLLM(ILLM):
                 raise QuotaExhaustedError(provider="mistral", is_visitor_key=self._is_visitor_key)
             if response.status_code != 200:
                 raise ProviderUnavailableError(provider="mistral", status_code=response.status_code)
-            async for content in _iter_openai_sse(response):
+            async for content in _iter_openai_sse(response, usage_sink):
                 yield content
+        if usage_sink:
+            self._last_usage = usage_sink[-1]
 
 
 class GeminiLLM(ILLM):
@@ -361,6 +435,8 @@ class GeminiLLM(ILLM):
             if response.status_code != 200:
                 raise ProviderUnavailableError(provider="gemini", status_code=response.status_code)
 
+            prompt_tokens = 0
+            completion_tokens = 0
             async for line in response.aiter_lines():
                 line = line.strip()
                 if not line or not line.startswith("data: "):
@@ -368,16 +444,26 @@ class GeminiLLM(ILLM):
                 data_str = line[len("data: ") :].strip()
                 try:
                     chunk = json.loads(data_str)
-                    candidates = chunk.get("candidates", [])
-                    if not candidates:
-                        continue
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    for part in parts:
-                        text = part.get("text", "")
-                        if text:
-                            yield text
                 except json.JSONDecodeError:
                     continue
+                meta = chunk.get("usageMetadata") or {}
+                if meta:
+                    prompt_tokens = int(meta.get("promptTokenCount") or prompt_tokens)
+                    completion_tokens = int(
+                        meta.get("candidatesTokenCount") or meta.get("totalTokenCount") or completion_tokens
+                    )
+                candidates = chunk.get("candidates", [])
+                if not candidates:
+                    continue
+                parts = candidates[0].get("content", {}).get("parts", [])
+                for part in parts:
+                    text = part.get("text", "")
+                    if text:
+                        yield text
+            if prompt_tokens or completion_tokens:
+                self._last_usage = TokenUsage(
+                    prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
+                )
 
 
 _BYOK_ADAPTERS: dict[str, tuple[type[ILLM], str]] = {

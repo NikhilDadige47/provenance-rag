@@ -204,12 +204,13 @@ async def test_session_parse_cache_hit(job_env) -> None:
 
     c_hash = hashlib.sha256(pdf_bytes).hexdigest()
 
-    # Parse cache should now have a record
+    from src.security.credit_config import GLOBAL_PARSE_CACHE_PARSER, GLOBAL_PARSE_CACHE_VERSION
+
+    # Parse cache should now have a global file-hash record
     cached = db.get_parse_cache(
-        session_id="session_job_1",
         content_hash=c_hash,
-        parser="local_pymupdf",
-        parser_version="1.0",
+        parser=GLOBAL_PARSE_CACHE_PARSER,
+        parser_version=GLOBAL_PARSE_CACHE_VERSION,
     )
     assert cached is not None
 

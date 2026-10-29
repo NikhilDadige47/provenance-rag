@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/button';
 
-import { ChatMessage, ExampleQuestion, SourceCard } from '../types';
+import { ChatMessage, ExampleQuestion, SourceCard, UsageInfo } from '../types';
 import { api } from '../lib/api';
+import { formatTtl, readUsage, useLiveTtl } from '../lib/quota';
+import { AllowanceMeter } from './AllowanceMeter';
 import { MarkdownMessage } from './MarkdownMessage';
 import { AIReasoningTrace } from './AIReasoningTrace';
 import { SourcesDropdown } from './SourcesDropdown';
@@ -35,6 +37,9 @@ interface ChatContainerProps {
   llmModel?: string;
   activeNav?: NavItem;
   onGoToUpload?: () => void;
+  usage?: UsageInfo | null;
+  hasVisitorKey?: boolean;
+  onOpenLimits?: () => void;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -72,6 +77,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   llmModel,
   activeNav,
   onGoToUpload,
+  usage = null,
+  hasVisitorKey = false,
+  onOpenLimits,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -103,7 +111,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   // State 3: Unlocked & Ready (demo corpus or custom docs available)
   const isLocked = scope !== 'demo' && (!documentCount || documentCount === 0);
   const isProcessing = isIngesting;
-  const isInputDisabled = isLoading || isProcessing || isLocked;
+  const quota = readUsage(usage);
+  const ttl = useLiveTtl(usage);
+  const remainingQuestions = hasVisitorKey
+    ? Math.max(0, quota.ownMax - quota.ownUsed)
+    : quota.ownerRemaining;
+  const isQuotaLocked = remainingQuestions === 0;
+  const isInputDisabled = isLoading || isProcessing || isLocked || isQuotaLocked;
 
   const llmLabel = formatLlmLabel(llmProvider, llmModel);
 
@@ -113,6 +127,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }
     if (isLocked) {
       return 'Upload a document to chat';
+    }
+    if (isQuotaLocked) {
+      return 'Add your LLM key to keep chatting';
     }
     return 'Type your query...';
   };
@@ -129,16 +146,25 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, [messages, activeThoughtStages]);
 
   useEffect(() => {
-    if (!queuedQuestion || isInputDisabled) return;
+    if (!queuedQuestion) return;
     setInput(queuedQuestion);
     requestAnimationFrame(() => {
       document.getElementById('chat-input')?.focus();
     });
-  }, [queuedQuestion, queuedNonce, isInputDisabled]);
+  }, [queuedQuestion, queuedNonce]);
 
   const handleSend = async (questionText?: string) => {
     const q = (questionText || input).trim();
     if (!q || isLoading) return;
+    if (isQuotaLocked) {
+      onToast(
+        hasVisitorKey
+          ? 'Your-key question cap for this session is used up.'
+          : 'Owner-funded questions are used up. Add your own LLM key to keep chatting.',
+        'warning'
+      );
+      return;
+    }
 
     setInput('');
     const userMsgId = `user_${Date.now()}`;
@@ -264,6 +290,44 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   return (
     <div className="relative flex flex-col h-full flex-1 surface-panel overflow-hidden">
+      {/* Chat Header stays clickable so remaining quota / TTL is always reachable */}
+      <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between gap-3 text-xs shrink-0 z-50">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {onOpenMobileMenu && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onOpenMobileMenu}
+              className="size-7 lg:hidden mr-1"
+              aria-label="Open sidebar"
+            >
+              <Menu className="size-4" />
+            </Button>
+          )}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-bold text-sm sm:text-base text-foreground tracking-tight truncate">Provenance Copilot</span>
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          {llmLabel && (
+            <span
+              className="text-[11px] font-mono text-muted-foreground hidden xl:inline-block truncate max-w-[180px]"
+              title={llmLabel}
+            >
+              {llmLabel}
+            </span>
+          )}
+          <AllowanceMeter
+            usage={usage}
+            hasVisitorKey={hasVisitorKey}
+            onAddKey={onGoToUpload}
+            onOpenLimits={onOpenLimits}
+          />
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {showLockOverlay && (
         <div
           className="absolute inset-0 z-40 flex items-center justify-center bg-background/35 dark:bg-background/45"
@@ -313,34 +377,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         }`}
         aria-hidden={showLockOverlay}
       >
-      {/* Chat Header */}
-      <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between text-xs shrink-0">
-        <div className="flex items-center gap-2.5">
-          {onOpenMobileMenu && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={onOpenMobileMenu}
-              className="size-7 lg:hidden mr-1"
-              aria-label="Open sidebar"
-            >
-              <Menu className="size-4" />
-            </Button>
-          )}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-sm sm:text-base text-foreground tracking-tight">Provenance Copilot</span>
-            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-          </div>
-        </div>
-        {llmLabel && (
-          <span
-            className="text-[11px] font-mono text-muted-foreground hidden sm:inline-block truncate max-w-[280px]"
-            title={llmLabel}
-          >
-            {llmLabel}
-          </span>
-        )}
-      </div>
 
       <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Messages Feed */}
@@ -363,6 +399,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             <h4 className="font-medium text-sm text-muted-foreground tracking-tight">
               What do you want to know?
             </h4>
+            {usage && (
+              <p className="text-[11px] text-muted-foreground/80 font-mono">
+                {remainingQuestions} of {hasVisitorKey ? quota.ownMax : quota.ownerMax} questions
+                {hasVisitorKey ? ' on your key' : ''} · {formatTtl(ttl)}
+              </p>
+            )}
           </div>
         ) : (
           <>
@@ -494,9 +536,31 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           </div>
         )}
 
+        {isQuotaLocked && !isLocked && !isProcessing && (
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-xs text-amber-800 dark:text-amber-300 mb-2.5">
+            <span className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {hasVisitorKey
+                  ? 'Your-key question cap for this session is used up.'
+                  : 'Owner-funded questions are used up. Paste your own LLM key to keep chatting.'}
+              </span>
+            </span>
+            {!hasVisitorKey && onGoToUpload && (
+              <button
+                type="button"
+                onClick={onGoToUpload}
+                className="shrink-0 font-semibold hover:underline"
+              >
+                Add key
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="w-full flex items-center gap-2 relative">
           <div className="relative flex-1">
-            {isLocked && (
+            {(isLocked || isQuotaLocked) && !isProcessing && (
               <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
                 <Lock className="size-3.5" />
               </div>
@@ -521,7 +585,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               placeholder={getPlaceholder()}
               autoComplete="off"
               className={`w-full h-10 ${
-                isLocked || isProcessing ? 'pl-9 pr-3.5' : 'px-3.5'
+                isLocked || isProcessing || isQuotaLocked ? 'pl-9 pr-3.5' : 'px-3.5'
               } rounded-lg border border-border bg-background/60 focus:bg-background text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed placeholder:text-muted-foreground/70`}
             />
           </div>
@@ -535,10 +599,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 <Loader2 className="size-3.5 animate-spin" />
                 <span className="hidden sm:inline">Processing</span>
               </>
-            ) : isLocked ? (
+            ) : isLocked || isQuotaLocked ? (
               <>
                 <Lock className="size-3.5" />
-                <span className="hidden sm:inline">Locked</span>
+                <span className="hidden sm:inline">{isQuotaLocked ? 'Quota' : 'Locked'}</span>
               </>
             ) : (
               <>
@@ -548,6 +612,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             )}
           </Button>
         </div>
+      </div>
       </div>
       </div>
     </div>

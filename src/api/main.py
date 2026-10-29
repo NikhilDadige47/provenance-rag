@@ -46,6 +46,7 @@ from src.api.upload import router as upload_router
 from src.retrieval.store import QdrantVectorStore
 from src.security.config import OwnerConfig
 from src.security.errors import KeySecurityError, ProviderTimeoutError
+from src.security.ledger import Ledger
 from src.security.secret import Secret
 from src.storage.db import DatabaseManager
 
@@ -71,11 +72,13 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     """Initialize shared resources on startup; clean up on shutdown."""
     cfg = OwnerConfig.from_env()
     db = DatabaseManager()  # creates SQLite tables if absent
+    ledger = Ledger(db.db_path)
     store = QdrantVectorStore(cfg=cfg)
     job_runner = JobRunner(db=db, store=store, cfg=cfg)
 
     app.state.cfg = cfg
     app.state.db = db
+    app.state.ledger = ledger
     app.state.store = store
     app.state.job_runner = job_runner
 

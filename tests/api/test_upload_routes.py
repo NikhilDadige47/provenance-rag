@@ -108,6 +108,9 @@ def test_upload_submit_and_poll_job(client: TestClient) -> None:
         "indexing",
         "ready",
     )
+    assert "parser_used" in poll_json
+    assert "degraded" in poll_json
+    assert isinstance(poll_json["degraded"], bool)
 
 
 def test_upload_cloud_parser_requires_key(client: TestClient) -> None:

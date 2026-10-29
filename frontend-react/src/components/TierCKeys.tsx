@@ -175,12 +175,12 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-base">Bring Your Own LLM Key</h3>
           <span className="text-xs font-mono bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full">
-            Unlimited BYOK Queries
+            Owner tokens skipped
           </span>
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Provide your personal key for unlimited queries. Held in volatile RAM only; never persisted to disk.
+          Your key stays in this tab only — never stored. Owner-funded questions are skipped while it is active.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">

@@ -11,7 +11,6 @@ Implements §4, §7, and §12 of token-engineering-guide.md:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -21,6 +20,7 @@ from typing import Any
 from src.ingest.estimator import (
     InputRejectedError,
     analyse_pdf,
+    landing_route,
     landing_units,
     llama_units,
 )
@@ -32,11 +32,17 @@ from src.ingest.parsers.structured_doc import StructuredDoc
 from src.security.breaker import Breaker
 from src.security.config import OwnerConfig
 from src.security.credit_config import (
+    GLOBAL_PARSE_CACHE_PARSER,
+    GLOBAL_PARSE_CACHE_VERSION,
+    LANDING_MODELS,
+    PARSE_CACHE_TTL_SECONDS,
     VISITOR_ALLOWANCE,
     cycle_str,
     daily_cap_units,
+    landing_pool_key,
     today_str,
     usable_units,
+    visitor_bucket_id,
 )
 from src.security.errors import (
     ProviderTimeoutError,
@@ -102,22 +108,23 @@ class FallbackParserRouter:
         # 1. Gate 0: Free, local PyMuPDF pre-flight inspection
         info = analyse_pdf(pdf_bytes)
 
-        # 2. Dedup Cache Check (SHA-256 + digital flag)
+        # 2. Global file-hash cache (SHA-256). Repeats across sessions cost 0.
         cached_json = self.db.get_parse_cache(
-            session_id=ctx.session_id,
             content_hash=ctx.sha,
-            parser="any",
-            parser_version="router-v1",
+            parser=GLOBAL_PARSE_CACHE_PARSER,
+            parser_version=GLOBAL_PARSE_CACHE_VERSION,
+            max_age_seconds=PARSE_CACHE_TTL_SECONDS,
         )
         if cached_json:
             try:
                 cached_data = json.loads(cached_json)
-                s_doc = StructuredDoc(**cached_data["doc"])
+                cached_doc_payload = cached_data.get("doc") or cached_data
+                s_doc = StructuredDoc(**cached_doc_payload)
                 logger.info(f"Parse dedup cache HIT for {ctx.sha[:10]}: charged 0 credits")
                 return ParseExecutionResult(
                     structured_doc=s_doc,
-                    parser_label=cached_data.get("parser_label", "cache"),
-                    degraded=cached_data.get("degraded", False),
+                    parser_label=cached_data.get("parser_label", s_doc.parser_used or "cache"),
+                    degraded=bool(cached_data.get("degraded", False)),
                     credits_charged=0,
                     cache_hit=True,
                     fallback_trail=[("cache", "hit")],
@@ -161,17 +168,19 @@ class FallbackParserRouter:
                 logger.info(f"Dispatching parse to '{provider_name}' (reserved={units} units)")
                 structured_doc = await self._call_provider(provider_name, pdf_path, ctx, info)
 
-                # Commit Actuals (Reconcile reserved vs billed)
+                actual_units = (
+                    structured_doc.credits_units
+                    if structured_doc.credits_units is not None
+                    else units
+                )
                 if buckets:
-                    await self.ledger.commit(buckets, units)
+                    await self.ledger.commit(buckets, actual_units)
 
-                # Cache Successful Result
                 try:
                     self.db.set_parse_cache(
-                        session_id=ctx.session_id,
                         content_hash=ctx.sha,
-                        parser="any",
-                        parser_version="router-v1",
+                        parser=GLOBAL_PARSE_CACHE_PARSER,
+                        parser_version=GLOBAL_PARSE_CACHE_VERSION,
                         raw_result_blob=json.dumps(
                             {
                                 "doc": structured_doc.model_dump(),
@@ -189,7 +198,7 @@ class FallbackParserRouter:
                     parser_label=provider_name,
                     degraded=is_degraded,
                     fallback_trail=fallback_trail,
-                    credits_charged=units,
+                    credits_charged=actual_units if buckets else 0,
                     cache_hit=False,
                 )
 
@@ -218,6 +227,21 @@ class FallbackParserRouter:
         logger.info("Engaging infinite floor PyMuPDFLocal parser")
         doc = await self.local_adapter.parse(pdf_path)
         fallback_trail.append(("pymupdf_floor", "ok"))
+        try:
+            self.db.set_parse_cache(
+                content_hash=ctx.sha,
+                parser=GLOBAL_PARSE_CACHE_PARSER,
+                parser_version=GLOBAL_PARSE_CACHE_VERSION,
+                raw_result_blob=json.dumps(
+                    {
+                        "doc": doc.model_dump(),
+                        "parser_label": "local_pymupdf:floor",
+                        "degraded": True,
+                    }
+                ),
+            )
+        except Exception as cache_err:
+            logger.warning(f"Failed to cache floor parse result: {cache_err}")
         return ParseExecutionResult(
             structured_doc=doc,
             parser_label="local_pymupdf:floor",
@@ -276,11 +300,11 @@ class FallbackParserRouter:
     ) -> list[Bucket]:
         today = today_str()
         cycle = cycle_str()
-        vid = hashlib.md5(f"{ctx.session_id}:{ctx.client_ip}".encode()).hexdigest()[:12]
+        vid = visitor_bucket_id(ctx.session_id, ctx.client_ip)
         pages = info.get("pages", 1)
 
         if provider_name == "landingai":
-            pool_key = "pool:landing:lifetime"
+            pool_key = landing_pool_key()
             return [
                 Bucket(pool_key, units, usable_units("landing")),
                 Bucket(f"day:landing:{today}", units, daily_cap_units("landing")),
@@ -319,7 +343,16 @@ class FallbackParserRouter:
     ) -> StructuredDoc:
         api_key = self._resolve_key(provider_name, ctx)
         if provider_name == "landingai":
-            return await self.landing_adapter.parse(pdf_path, api_key=api_key)
+            family, _tier = landing_route(info)
+            doc = await self.landing_adapter.parse(
+                pdf_path,
+                api_key=api_key,
+                model=LANDING_MODELS[family],
+            )
+            return doc
         if provider_name == "llamaparse":
-            return await self.llama_adapter.parse(pdf_path, api_key=api_key)
+            doc = await self.llama_adapter.parse(pdf_path, api_key=api_key)
+            if doc.credits_units is None:
+                doc.credits_units = llama_units(info)
+            return doc
         return await self.local_adapter.parse(pdf_path)

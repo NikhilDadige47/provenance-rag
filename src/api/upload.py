@@ -42,6 +42,7 @@ from src.api.upload_validation import (
 from src.ingest.parsers.selection import (
     DEFAULT_UPLOAD_PARSER,
     UploadParserError,
+    canonical_parser_label,
     normalize_upload_parser,
     visitor_parser_key_required,
 )
@@ -75,6 +76,8 @@ class JobResponse(BaseModel):
     error_message: str | None = None
     quality_warnings: list[str] | None = None
     quality_advice: str | None = None
+    parser_used: str | None = None
+    degraded: bool = False
     started_at: str
     finished_at: str | None = None
 
@@ -106,6 +109,7 @@ class DocumentMetadataResponse(BaseModel):
     quality_warnings: list[str] | None = None
     chunk_count: int = 0
     filename: str = ""
+    degraded: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +325,16 @@ async def get_job_status(
         except Exception:
             quality_warnings = [str(job["quality_flags"])]
 
+    parser_used = None
+    doc_id = job.get("doc_id")
+    if doc_id:
+        document = db.get_document(doc_id, session_id=session.session_id)
+        if document:
+            parser_used = canonical_parser_label(document.get("parser_used"))
+    if not parser_used:
+        parser_used = canonical_parser_label(job.get("parser_name"))
+    degraded = parser_used == "local_pymupdf"
+
     return JobResponse(
         job_id=job["job_id"],
         session_id=job["session_id"],
@@ -332,6 +346,8 @@ async def get_job_status(
         error_message=job.get("error_message"),
         quality_warnings=quality_warnings,
         quality_advice=quality_advice,
+        parser_used=parser_used,
+        degraded=degraded,
         started_at=job["started_at"],
         finished_at=job.get("finished_at"),
     )
@@ -361,13 +377,14 @@ async def list_session_documents(
             except Exception:
                 quality_warnings = None
 
+        parser_used = canonical_parser_label(d.get("parser_used"))
         results.append(
             DocumentMetadataResponse(
                 doc_id=d["doc_id"],
                 session_id=d["session_id"],
                 title=d["title"],
                 page_count=d["page_count"],
-                parser_used=d["parser_used"],
+                parser_used=parser_used,
                 parser_version=d.get("parser_version", "1.0"),
                 chunking_version=d.get("chunking_version", "hybrid-v1"),
                 embedding_version=d.get("embedding_version", "emb-v1"),
@@ -375,6 +392,7 @@ async def list_session_documents(
                 quality_warnings=quality_warnings,
                 chunk_count=int(d.get("chunk_count") or 0),
                 filename=str(d.get("filename") or d.get("title") or "document.pdf"),
+                degraded=parser_used == "local_pymupdf",
             )
         )
     return results

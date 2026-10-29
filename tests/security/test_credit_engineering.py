@@ -359,3 +359,83 @@ async def test_router_auto_falls_to_llamaparse_when_landing_budget_fails(tmp_pat
     assert any(reason.startswith("budget:") for reason in trail_reasons)
     if pdf_path.exists():
         pdf_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_router_commits_actual_landing_credits_not_estimate(tmp_path: Path):
+    db = DatabaseManager(tmp_path / "test_router_actual.db")
+    router = FallbackParserRouter(db=db)
+    router.cfg.landingai_api_key = Secret("mock_landing_key")
+    router.cfg.llamaparse_api_key = None
+
+    pdf_bytes = create_digital_pdf(page_count=1)
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        pdf_path = Path(tmp.name)
+
+    ctx = RequestContext(
+        session_id="sess_actual_credits",
+        client_ip="127.0.0.1",
+        sha="sha_actual_credits",
+        byok=False,
+    )
+    landing_doc = _sample_structured_doc("landingai")
+    landing_doc.credits_units = 7
+
+    with patch.object(router.landing_adapter, "parse", return_value=landing_doc):
+        result = await router.parse_with_fallback(
+            pdf_path=pdf_path,
+            pdf_bytes=pdf_bytes,
+            ctx=ctx,
+            preferred_parser="auto",
+        )
+
+    from src.security.credit_config import landing_pool_key
+
+    assert result.credits_charged == 7
+    assert router.ledger.get_balance(landing_pool_key()) == 7
+    if pdf_path.exists():
+        pdf_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_parse_cache_is_global_across_sessions(tmp_path: Path):
+    db = DatabaseManager(tmp_path / "test_router_global_cache.db")
+    router = FallbackParserRouter(db=db)
+    router.cfg.landingai_api_key = Secret("mock_landing_key")
+    router.cfg.llamaparse_api_key = None
+
+    pdf_bytes = create_digital_pdf(page_count=1)
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        pdf_path = Path(tmp.name)
+
+    landing_doc = _sample_structured_doc("landingai")
+    ctx_a = RequestContext(
+        session_id="sess_cache_a",
+        client_ip="10.0.0.1",
+        sha="shared_file_hash",
+        byok=False,
+    )
+    ctx_b = RequestContext(
+        session_id="sess_cache_b",
+        client_ip="10.0.0.2",
+        sha="shared_file_hash",
+        byok=False,
+    )
+
+    with patch.object(router.landing_adapter, "parse", return_value=landing_doc) as land_mock:
+        first = await router.parse_with_fallback(
+            pdf_path=pdf_path, pdf_bytes=pdf_bytes, ctx=ctx_a, preferred_parser="auto"
+        )
+        second = await router.parse_with_fallback(
+            pdf_path=pdf_path, pdf_bytes=pdf_bytes, ctx=ctx_b, preferred_parser="auto"
+        )
+
+    land_mock.assert_awaited_once()
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert second.credits_charged == 0
+    if pdf_path.exists():
+        pdf_path.unlink()
+

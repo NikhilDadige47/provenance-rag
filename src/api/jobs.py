@@ -5,7 +5,7 @@ Implements roadmap P6-T3, P6-T4, and P6-T5:
 - Strict job state machine: queued -> parsing -> chunking -> embedding -> indexing -> ready | failed
 - Ephemeral in-memory parser key lifecycle with guaranteed finally shredder (P6-T3)
 - Quality gate integration with non-blocking warnings and automatic local fallback (P6-T4)
-- Session-scoped parse caching (P6-T5)
+- Global file-hash parse caching (P6-T5)
 - Partial vector rollback on failure / cancellation
 """
 
@@ -34,6 +34,11 @@ from src.retrieval.embed import CohereEmbedder
 from src.retrieval.sparse import LocalSparseVectorizer, SparseVector
 from src.retrieval.store import QdrantVectorStore
 from src.security.config import OwnerConfig
+from src.security.credit_config import (
+    GLOBAL_PARSE_CACHE_PARSER,
+    GLOBAL_PARSE_CACHE_VERSION,
+    PARSE_CACHE_TTL_SECONDS,
+)
 from src.security.errors import InvalidKeyError, QuotaExhaustedError, RateLimitedError
 from src.security.secret import Secret
 from src.storage.db import DatabaseManager
@@ -149,21 +154,26 @@ class JobRunner:
             content_hash = hashlib.sha256(file_bytes).hexdigest()
 
             # -----------------------------------------------------------------
-            # Step 1: Check Session-Scoped Parse Cache (P6-T5)
+            # Step 1: Check global file-hash parse cache
             # -----------------------------------------------------------------
             structured_doc: StructuredDoc | None = None
             parser_used = parser_name
             cached_blob = self.db.get_parse_cache(
-                session_id=session_id,
                 content_hash=content_hash,
-                parser=parser_name,
-                parser_version="1.0",
+                parser=GLOBAL_PARSE_CACHE_PARSER,
+                parser_version=GLOBAL_PARSE_CACHE_VERSION,
+                max_age_seconds=PARSE_CACHE_TTL_SECONDS,
             )
             if cached_blob:
                 try:
                     cached_dict = json.loads(cached_blob)
-                    structured_doc = StructuredDoc(**cached_dict)
-                    parser_used = canonical_parser_label(structured_doc.parser_used or parser_name)
+                    cached_doc = cached_dict.get("doc") or cached_dict
+                    structured_doc = StructuredDoc(**cached_doc)
+                    parser_used = canonical_parser_label(
+                        cached_dict.get("parser_label")
+                        or structured_doc.parser_used
+                        or parser_name
+                    )
                     logger.info(f"Parse cache hit [{job_id}] for hash={content_hash[:8]}")
                 except Exception as exc:
                     logger.warning(f"Failed to deserialize cached parse blob: {exc}")
@@ -195,11 +205,16 @@ class JobRunner:
                 # Store in session-scoped parse cache (never includes keys)
                 try:
                     self.db.set_parse_cache(
-                        session_id=session_id,
                         content_hash=content_hash,
-                        parser=parser_name,
-                        parser_version="1.0",
-                        raw_result_blob=structured_doc.model_dump_json(),
+                        parser=GLOBAL_PARSE_CACHE_PARSER,
+                        parser_version=GLOBAL_PARSE_CACHE_VERSION,
+                        raw_result_blob=json.dumps(
+                            {
+                                "doc": structured_doc.model_dump(),
+                                "parser_label": parser_used,
+                                "degraded": parser_used.startswith("local"),
+                            }
+                        ),
                     )
                 except Exception as cache_exc:
                     logger.warning(f"Could not cache parse result [{job_id}]: {cache_exc}")

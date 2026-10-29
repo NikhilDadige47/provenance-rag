@@ -97,6 +97,14 @@ class TestTierAUsageLimits:
         assert usage["questions_owner_llm_used"] == 0
         assert usage["questions_own_llm_used"] == 0
         assert usage["at_capacity"] is False
+        assert usage["owner_questions_exhausted"] is False
+        assert usage["questions_owner_llm_max"] == app.state.cfg.session_max_questions_owner_llm
+        assert usage["rerank_calls_max"] == app.state.cfg.session_max_rerank_calls
+        assert usage["session_docs_max"] == app.state.cfg.session_max_documents
+        assert usage["session_pages_max"] == app.state.cfg.session_max_total_pages
+        assert usage["session_ttl_seconds"] > 0
+        assert usage["daily_questions_per_ip_max"] == 100
+        assert usage["requests_per_minute_max"] == 20
         assert usage["owner_llm_provider"] == app.state.cfg.default_llm_provider
         assert usage["owner_llm_model"] == app.state.cfg.default_llm_model
 
@@ -119,3 +127,21 @@ class TestTierAUsageLimits:
         usage = usage_resp.json()
         assert usage["questions_owner_llm_used"] == 3
         assert usage["questions_owner_llm_remaining"] == usage["questions_owner_llm_max"] - 3
+        assert usage["owner_questions_exhausted"] is False
+
+    def test_usage_owner_exhausted_when_cap_hit(self, client: TestClient) -> None:
+        create_resp = client.post("/session")
+        token = create_resp.json()["session_id"]
+        active_db: DatabaseManager = app.state.db
+        max_q = app.state.cfg.session_max_questions_owner_llm
+        with active_db._get_connection() as conn:
+            conn.execute(
+                "UPDATE sessions SET questions_owner_llm = ? WHERE session_id = ?",
+                (max_q, token),
+            )
+            conn.commit()
+
+        usage = client.get("/usage", headers={"Authorization": f"Bearer {token}"}).json()
+        assert usage["owner_questions_exhausted"] is True
+        assert usage["questions_owner_llm_remaining"] == 0
+        assert usage["at_capacity"] is False

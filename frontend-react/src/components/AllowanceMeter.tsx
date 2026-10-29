@@ -1,101 +1,79 @@
 import React from 'react';
-import { Gauge, Clock, Sparkles } from 'lucide-react';
+import { Gauge, KeyRound } from 'lucide-react';
 import { UsageInfo } from '../types';
+import { formatTtl, readUsage, useLiveTtl } from '../lib/quota';
 
 interface AllowanceMeterProps {
   usage: UsageInfo | null;
+  hasVisitorKey?: boolean;
+  onAddKey?: () => void;
+  onOpenLimits?: () => void;
 }
 
-export const AllowanceMeter: React.FC<AllowanceMeterProps> = ({ usage }) => {
+export const AllowanceMeter: React.FC<AllowanceMeterProps> = ({
+  usage,
+  hasVisitorKey = false,
+  onAddKey,
+  onOpenLimits,
+}) => {
+  const ttl = useLiveTtl(usage);
+  const { ownerRemaining, ownerMax, ownerExhausted, ownUsed, ownMax } = readUsage(usage);
+  const remaining = hasVisitorKey ? Math.max(0, ownMax - ownUsed) : ownerRemaining;
+  const max = hasVisitorKey ? ownMax : ownerMax;
+  const usedPct = Math.min(100, Math.round(((max - remaining) / Math.max(1, max)) * 100));
+  const showKeyCta = ownerExhausted && !hasVisitorKey;
+  const warn = remaining === 0;
+
   if (!usage) {
     return (
-      <div className="border border-border rounded-lg p-3 bg-card/60 animate-pulse flex items-center justify-between">
-        <div className="h-4 w-40 bg-muted rounded"></div>
-        <div className="h-4 w-20 bg-muted rounded"></div>
-      </div>
+      <div className="h-8 w-44 rounded-full bg-muted/60 animate-pulse" aria-hidden />
     );
   }
 
-  const ownerUsed = usage.questions_owner_llm_used ?? 0;
-  const ownerMax = usage.questions_owner_llm_max ?? 10;
-  const ownerRemaining = usage.questions_owner_llm_remaining ?? Math.max(0, ownerMax - ownerUsed);
-  const ownerPct = Math.min(100, Math.round((ownerUsed / ownerMax) * 100));
-
-  const rerankUsed = usage.rerank_calls_used ?? 0;
-  const rerankMax = usage.rerank_calls_max ?? 20;
+  const label = hasVisitorKey
+    ? `${remaining} of ${max} questions left on your key, ${formatTtl(ttl)}`
+    : `${remaining} of ${max} questions left, ${formatTtl(ttl)}`;
 
   return (
-    <div className="border border-border rounded-lg p-4 surface-inset shadow-sm space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Gauge className="size-4 text-primary" />
-          <span className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-            Session Capacity Meter
-          </span>
-        </div>
-        {usage.at_capacity ? (
-          <span className="text-[11px] font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded-full border border-destructive/20">
-            Capacity Reached
-          </span>
-        ) : (
-          <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-            Active Session
-          </span>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-        {/* Owner LLM questions */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground flex items-center gap-1">
-              <Sparkles className="size-3 text-primary" />
-              Owner LLM Queries
-            </span>
-            <span className="font-mono font-medium">
-              {ownerRemaining} left <span className="text-muted-foreground/60">/ {ownerMax}</span>
-            </span>
-          </div>
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-500 ${
-                ownerPct > 80 ? 'bg-amber-500' : 'bg-primary'
-              }`}
-              style={{ width: `${ownerPct}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Neural Rerank calls */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Cohere Rerank v3.5</span>
-            <span className="font-mono font-medium">
-              {rerankUsed} used <span className="text-muted-foreground/60">/ {rerankMax}</span>
-            </span>
-          </div>
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-500 transition-all duration-500"
-              style={{ width: `${Math.min(100, Math.round((rerankUsed / rerankMax) * 100))}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Session expiry countdown */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground flex items-center gap-1">
-              <Clock className="size-3" />
-              Session TTL
-            </span>
-            <span className="font-mono font-medium text-xs">30 mins active</span>
-          </div>
-          <div className="text-[11px] text-muted-foreground/80 truncate">
-            Auto-wipes upon tab close or inactivity
-          </div>
-        </div>
-      </div>
+    <div className="flex items-center gap-2 min-w-0">
+      <button
+        type="button"
+        onClick={onOpenLimits}
+        aria-label={label}
+        className={`flex items-center gap-2 min-w-0 rounded-full border px-2.5 py-1 text-left transition-colors ${
+          warn
+            ? 'border-amber-500/35 bg-amber-500/10 hover:bg-amber-500/15'
+            : 'border-border bg-card/80 hover:border-primary/40 hover:bg-muted/40'
+        }`}
+        title="Open limits"
+      >
+        <Gauge className={`size-3.5 shrink-0 ${warn ? 'text-amber-600' : 'text-primary'}`} />
+        <span className="font-mono text-[11px] font-semibold text-foreground whitespace-nowrap">
+          {remaining} left
+        </span>
+        <span className="hidden sm:inline text-[10px] text-muted-foreground font-mono">
+          / {max}
+        </span>
+        <span className="hidden md:inline h-1 w-12 rounded-full bg-muted overflow-hidden">
+          <span
+            className={`block h-full ${warn || usedPct > 80 ? 'bg-amber-500' : 'bg-primary'}`}
+            style={{ width: `${usedPct}%` }}
+          />
+        </span>
+        <span className="hidden lg:inline text-[10px] text-muted-foreground font-mono whitespace-nowrap">
+          {formatTtl(ttl)}
+        </span>
+      </button>
+      {showKeyCta && onAddKey && (
+        <button
+          type="button"
+          onClick={onAddKey}
+          className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors shrink-0"
+        >
+          <KeyRound className="size-3" />
+          Add your key
+        </button>
+      )}
     </div>
   );
 };

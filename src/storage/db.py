@@ -114,20 +114,8 @@ class DatabaseManager:
                 """
             )
 
-            # 5. Parse cache table (session-scoped only)
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS parse_cache (
-                    session_id TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    parser TEXT NOT NULL,
-                    parser_version TEXT NOT NULL,
-                    raw_result_blob TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (session_id, content_hash, parser, parser_version)
-                )
-                """
-            )
+            # 5. Parse cache — global by file hash (survives session wipe)
+            self._ensure_global_parse_cache(cursor)
 
             # 6. Usage daily table (owner global caps and meters)
             cursor.execute(
@@ -143,6 +131,56 @@ class DatabaseManager:
             )
 
             conn.commit()
+
+    def _ensure_global_parse_cache(self, cursor: sqlite3.Cursor) -> None:
+        """Create or migrate parse_cache to a session-independent file-hash key."""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='parse_cache'"
+        )
+        exists = cursor.fetchone()
+        if not exists:
+            cursor.execute(
+                """
+                CREATE TABLE parse_cache (
+                    content_hash TEXT NOT NULL,
+                    parser TEXT NOT NULL,
+                    parser_version TEXT NOT NULL,
+                    raw_result_blob TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (content_hash, parser, parser_version)
+                )
+                """
+            )
+            return
+
+        cursor.execute("PRAGMA table_info(parse_cache)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "session_id" not in columns:
+            return
+
+        cursor.execute(
+            """
+            CREATE TABLE parse_cache_global (
+                content_hash TEXT NOT NULL,
+                parser TEXT NOT NULL,
+                parser_version TEXT NOT NULL,
+                raw_result_blob TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (content_hash, parser, parser_version)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO parse_cache_global (
+                content_hash, parser, parser_version, raw_result_blob, created_at
+            )
+            SELECT content_hash, parser, parser_version, raw_result_blob, created_at
+            FROM parse_cache
+            """
+        )
+        cursor.execute("DROP TABLE parse_cache")
+        cursor.execute("ALTER TABLE parse_cache_global RENAME TO parse_cache")
 
     def insert_parents(self, parents: list[ParentChunk], session_id: str) -> None:
         """Insert parent context chunks into SQL."""
@@ -461,40 +499,63 @@ class DatabaseManager:
             conn.commit()
 
     def get_parse_cache(
-        self, session_id: str, content_hash: str, parser: str, parser_version: str
+        self,
+        content_hash: str,
+        parser: str,
+        parser_version: str,
+        *,
+        max_age_seconds: int | None = None,
+        session_id: str | None = None,
     ) -> str | None:
-        """Retrieve raw parsed StructuredDoc JSON from session cache."""
+        """Retrieve a globally cached parse result by file hash.
+
+        ``session_id`` is accepted for call-site compatibility and ignored.
+        """
+        del session_id
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT raw_result_blob FROM parse_cache
-                WHERE session_id = ? AND content_hash = ? AND parser = ? AND parser_version = ?
+                SELECT raw_result_blob, created_at FROM parse_cache
+                WHERE content_hash = ? AND parser = ? AND parser_version = ?
                 """,
-                (session_id, content_hash, parser, parser_version),
+                (content_hash, parser, parser_version),
             )
             row = cursor.fetchone()
-            return row["raw_result_blob"] if row else None
+            if not row:
+                return None
+            if max_age_seconds is not None:
+                try:
+                    created = datetime.fromisoformat(row["created_at"])
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=UTC)
+                    age = (datetime.now(UTC) - created).total_seconds()
+                    if age > max_age_seconds:
+                        return None
+                except (TypeError, ValueError):
+                    pass
+            return row["raw_result_blob"]
 
     def set_parse_cache(
         self,
-        session_id: str,
         content_hash: str,
         parser: str,
         parser_version: str,
         raw_result_blob: str,
+        session_id: str | None = None,
     ) -> None:
-        """Store parsed StructuredDoc JSON into session cache."""
+        """Store a parse result keyed only by file hash (global, not per session)."""
+        del session_id
         now_iso = datetime.now(UTC).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO parse_cache (
-                    session_id, content_hash, parser, parser_version, raw_result_blob, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    content_hash, parser, parser_version, raw_result_blob, created_at
+                ) VALUES (?, ?, ?, ?, ?)
                 """,
-                (session_id, content_hash, parser, parser_version, raw_result_blob, now_iso),
+                (content_hash, parser, parser_version, raw_result_blob, now_iso),
             )
             conn.commit()
 
@@ -521,6 +582,5 @@ class DatabaseManager:
             cursor.execute("DELETE FROM parents WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM documents WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM jobs WHERE session_id = ?", (session_id,))
-            cursor.execute("DELETE FROM parse_cache WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             conn.commit()

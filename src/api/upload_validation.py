@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from src.ingest.parsers.selection import visitor_parser_key_required
 from src.security.config import OwnerConfig
+from src.security.credit_config import VISITOR_ALLOWANCE
 from src.storage.db import DatabaseManager
 
 # ---------------------------------------------------------------------------
@@ -139,7 +140,7 @@ def validate_pdf_upload(
             )
 
         # Max pages per document check
-        max_pages_per_doc = getattr(cfg, "max_pages_per_doc", DEFAULT_MAX_PAGES_PER_DOC)
+        max_pages_per_doc = cfg.session_max_total_pages or VISITOR_ALLOWANCE["max_pages_doc"]
         if page_count > max_pages_per_doc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -166,8 +167,8 @@ def validate_pdf_upload(
 
     current_docs = session_row.get("docs_count", 0) or 0
     current_pages = session_row.get("pages_used", 0) or 0
-    max_docs_session = getattr(cfg, "max_docs_per_session", DEFAULT_MAX_DOCS_PER_SESSION)
-    max_pages_session = getattr(cfg, "max_pages_per_session", DEFAULT_MAX_TOTAL_PAGES_PER_SESSION)
+    max_docs_session = cfg.session_max_documents
+    max_pages_session = cfg.session_max_total_pages
 
     if current_docs + 1 > max_docs_session:
         raise HTTPException(
@@ -212,9 +213,9 @@ def build_upload_estimate(
     current_pages = session_row.get("pages_used", 0) or 0
     current_chunks = session_row.get("chunks_embedded", 0) or 0
 
-    max_docs = getattr(cfg, "max_docs_per_session", DEFAULT_MAX_DOCS_PER_SESSION)
-    max_pages = getattr(cfg, "max_pages_per_session", DEFAULT_MAX_TOTAL_PAGES_PER_SESSION)
-    max_chunks = getattr(cfg, "session_cap_chunks_embedded", 1500)
+    max_docs = cfg.session_max_documents
+    max_pages = cfg.session_max_total_pages
+    max_chunks = cfg.session_max_chunks_embedded
 
     can_proceed = (
         (current_docs + 1 <= max_docs)

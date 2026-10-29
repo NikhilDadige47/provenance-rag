@@ -170,20 +170,30 @@ export function App() {
     const fileName = ingest.fileName;
     const startedAt = Date.now();
 
-    const finishSuccess = (status: { doc_id?: string; chunks?: number; pages?: number; parser_name?: string }) => {
+    const finishSuccess = (status: {
+      doc_id?: string;
+      chunks?: number;
+      pages?: number;
+      parser_name?: string;
+      parser_used?: string;
+      degraded?: boolean;
+    }) => {
       if (settled || cancelled) return;
       settled = true;
       if (status.doc_id) {
         bindUploadedDoc(status.doc_id, fileName);
       }
+      const parserUsed = status.parser_used || status.parser_name || 'auto';
+      const degraded = Boolean(status.degraded) || parserUsed === 'local_pymupdf';
       const localDoc: UploadedDoc = {
         doc_id: status.doc_id || `local_${jobId}`,
         filename: fileName,
         chunk_count: Number(status.chunks || 0),
         token_count: 0,
-        parser_tier: status.parser_name || 'auto',
+        parser_tier: parserUsed,
         uploaded_at: new Date().toISOString(),
         page_count: Number(status.pages || 0),
+        degraded,
       };
       setDocuments((prev) => {
         const withoutDup = prev.filter(
@@ -201,7 +211,14 @@ export function App() {
       setSuggestedQuestions(suggestedQuestionsForFile(fileName));
       refreshDocuments();
       refreshUsage();
-      addToast(`"${fileName}" indexed! Ready to query.`, 'success');
+      if (degraded) {
+        addToast(
+          `"${fileName}" indexed with basic extract. Premium parsers were out of budget or unavailable.`,
+          'warning'
+        );
+      } else {
+        addToast(`"${fileName}" indexed. Ready to query.`, 'success');
+      }
       window.setTimeout(() => {
         setIngest(null);
       }, 700);
@@ -422,6 +439,7 @@ export function App() {
           ingest={ingest}
           suggestedQuestions={suggestedQuestions}
           onGoToUpload={() => handleSelectNav('tier_b')}
+          hasVisitorKey={Boolean(visitorLlm)}
         />
 
         {/* INTERACTIVE RESIZABLE DIVIDER LINE (Between Section 2 and Section 3) */}
@@ -463,6 +481,9 @@ export function App() {
             llmModel={visitorLlm ? visitorLlm.model : usage?.owner_llm_model}
             activeNav={activeNav}
             onGoToUpload={() => handleSelectNav('tier_b')}
+            usage={usage}
+            hasVisitorKey={Boolean(visitorLlm)}
+            onOpenLimits={() => handleSelectNav('limits')}
           />
         </main>
       </div>

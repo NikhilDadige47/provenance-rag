@@ -10,9 +10,9 @@
 1. **Both free plans are small, finite pools.** Landing ≈ 1,000 credits, LlamaParse = 10,000 credits/month. Your architecture is a *pool-budgeting* problem, not just rate limiting.
 2. **Never attach a payment method or Auto Recharge to these keys.** LlamaParse's Free plan has no pay-as-you-go and returns `402` when exhausted. Landing's Explore plan only spends credits you buy. Provider-side hard stops are your real safety net; your Redis ledger is the optimisation layer on top.
 3. **Landing is your "premium showcase" lane, not your workhorse.** At ~1 credit/page it supports only a few dozen pages/day. **LlamaParse (≈3,300 pages/month at Cost-effective) is the workhorse. PyMuPDF is the infinite floor.**
-4. **Route digital PDFs to Landing Verity (standard job)**, scanned PDFs to Landing Pro (standard job). This is ~3× cheaper per page than Pro and stretches the pool.
-5. **Reserve → call → commit/release**, atomically, across visitor, daily, and pool buckets. Fail **closed** on paid providers if Redis is down.
-6. **Cache by file hash.** Recruiters upload the same sample file. Repeats cost 0. Ship a pre-parsed sample.
+4. **Route digital PDFs to Landing Verity (standard Parse Job)**, scanned PDFs to Landing Pro (standard Parse Job). Sync Parse is priority (2×) — do not use it on the owner pool.
+5. **Reserve → call → commit actuals → release on failure**, atomically, across visitor, daily, and pool buckets. Landing actuals come from `metadata.billing.total_credits`.
+6. **Cache by file hash globally** (not per session). Repeats across visitors cost 0.
 7. **Always tell the user which parser produced the output** and flag degraded (PyMuPDF) results.
 
 ---
@@ -112,17 +112,21 @@ Per page at 2,000 chars/page: Pro priority 2.0, **Pro standard 1.0**, Verity pri
 4. **Day buckets do not roll over.** Unused credits don't stack into tomorrow's allowance.
 5. **Exhausted free plans are free to probe.** A `402` costs nothing, so a breaker that re-tries every 30 minutes is safe.
 
-### 3.4 Visitor allowances (suggested starting point)
+### 3.4 Visitor allowances (single source: `src/security/credit_config.py`)
 
-| Allowance (per visitor per day) | Value | Reason |
+These numbers are defined once in `VISITOR_ALLOWANCE` / `DAILY_GLOBAL` / `POOLS`. OwnerConfig, the ledger, Gate 0, and this guide must not drift.
+
+| Allowance | Value | Reason |
 |---|---|---|
-| Max pages per document | 3 | Bounds worst-case cost |
-| Documents (uploads) | 5 | Includes cache hits; blocks abuse |
-| Paid pages total | 10 | |
-| **Premium (Landing) credits** | **6.0** | ≈ two 3-page Pro docs or five Verity docs |
-| **LlamaParse credits** | **30** | ≈ ten pages |
-| PyMuPDF | IP rate limit, e.g. 20 docs/hour | CPU protection |
-| LLM tokens | 20,000 | §11 |
+| Max pages per document | 30 | Matches session page cap; paid buckets still skip oversized premium parses |
+| Session documents | 3 | |
+| Documents / visitor / day | 10 | Includes cache hits; blocks abuse |
+| Paid pages / visitor / day | 15 | |
+| **Premium (Landing) credits / day** | **6.0** | ≈ two 3-page Pro docs or five Verity docs |
+| **LlamaParse credits / day** | **30** | ≈ ten pages |
+| Owner LLM questions / session | 15 | Human-readable UX meter |
+| Owner LLM tokens / visitor / day | 50,000 | Real prompt+completion, reserved before generate |
+| Daily global owner LLM tokens | 500,000 | Spread across all visitors |
 
 When a visitor's premium allowance is used up, the router skips Landing (reserve fails) and continues to LlamaParse, then PyMuPDF. Quality degrades gracefully with quota, never with surprise.
 
@@ -151,7 +155,7 @@ Gate 0 (free, local, PyMuPDF): size, page count ≤ 3, encrypted?, empty?, digit
 BYOK key supplied? ──yes──► BYOK chain (THEIR keys only) ─► PyMuPDF
   │ no
   ▼
-Dedup cache (sha256 + route) ──hit──► return, charge 0
+Dedup cache (sha256, global, not per session) ──hit──► return, charge 0
   │ miss
   ▼
 For each provider in [Landing, LlamaParse, PyMuPDF]:
@@ -241,7 +245,7 @@ Your counters can disagree with the provider's real balance (playground testing,
 
 1. **Reserve** the worst case atomically across all buckets (visitor/day, visitor pages/day, provider/day, provider/pool).
 2. **Call** the provider.
-3. **Commit:** read actual (Landing: `metadata.billing.total_credits`; LlamaParse: pages × tier rate, reconciled against dashboard) and adjust each credit bucket by `actual − reserved`.
+3. **Commit actuals:** Landing from `result.metadata.billing.total_credits` (integer tenths). LlamaParse from pages × Cost-effective rate. Adjust each credit bucket by `actual − reserved`. Never commit the estimate if a bill was observed.
 4. **Release** the whole reservation on any failure (failed calls aren't billed, so the counters must roll back).
 
 Store Landing credits as **integer tenths** to avoid float drift. Fail **closed** (treat as budget-exhausted) if Redis errors.
@@ -255,7 +259,7 @@ With parsed output of ~6,000 chars for 3 pages, the document is only ≈ 1,500 t
 1. **Clean markdown first:** strip page-break and doc-ID markers, collapse whitespace, remove base64 images.
 2. **Cap input:** estimate tokens locally; truncate or chunk beyond your cap. If you use Anthropic, its token-counting endpoint gives exact counts.
 3. **Always set `max_tokens`** on free-tier calls. Output is the pricier side.
-4. **Charge actuals:** read `usage` (input + output) from the response and commit it to the visitor's token bucket.
+4. **Reserve before generate, charge actuals:** estimate `prompt + max_tokens`, reserve visitor-daily and global-daily buckets, then read provider `usage` (prompt + completion) from the stream and commit `actual − reserved`. Release on failure. Fallback to the local tokenizer only when the provider omitted usage.
 5. **Model choice:** smallest, cheapest model you're happy with for the free tier (for Anthropic, Haiku: `claude-haiku-5-5`). BYOK: allowlist with the user's choice as default. Escalate only on explicit user action. Check current per-token prices yourself (not verified here).
 6. **Prompt caching:** if users ask many questions about one document, cache the document block as a prefix.
 
@@ -310,10 +314,11 @@ def usable_units(p):  c = POOLS[p]; return int(c["total"] * (1 - c["reserve_pct"
 def daily_cap_units(p, days=30): return usable_units(p) // days
 
 VISITOR = dict(
-    max_pages_doc=3, docs_day=5, paid_pages_day=10,
+    max_pages_doc=30, docs_day=10, paid_pages_day=15,
+    session_max_documents=3, session_max_questions_owner_llm=15,
     landing_units_day=60,      # 6.0 credits (tenths)
     llama_units_day=30,        # 30 credits
-    llm_tokens_day=20_000,
+    llm_tokens_day=50_000,
 )
 SCANNED_CHARS_PER_PAGE = 3000
 MD_OVERHEAD = 1.25             # calibrate vs metadata.output_markdown_chars
@@ -560,7 +565,7 @@ One structured log line per request: provider, model, tier, pages, estimated vs 
 | LlamaParse tier credits, $1.25/1,000, 48 h cache | **Verified** from LlamaParse pricing |
 | LlamaParse Free = 10,000 credits/month, `402` at exhaustion, no pay-as-you-go on Free | **Verified** from LlamaParse billing docs and pricing pages |
 | LlamaParse 429 has no `Retry-After` | **Verified** from error reference |
-| **Landing free pool = 1,000 credits** | **User-stated. Not confirmed for ADE.** Landing's ADE docs say new accounts start on the Explore plan with "free credits" without giving a number in what I could read. The "1,000 credits/month" figure I found belongs to LandingLens, a different product, and a third-party listing describes ADE as free-trial rather than a permanent free plan. **Check va.landing.ai/plan and whether credits renew**; flip `resets` in `POOLS` accordingly |
+| **Landing free pool = 1,000 credits** | **User-stated. Not confirmed for ADE/DPT-3.** Code treats this as a **one-shot lifetime pool** (`POOLS["landing"]["resets"]="never"`, `pool_confirmed=False`). Flip `resets` and `pool_confirmed` only after the dashboard proves a monthly refresh. |
 | Landing per-request page limits and rate limits | **Not checked.** See Landing's Rate Limits page; confirm your 3-page cap is well under them |
 | Verity table quality | **Not tested** |
 | LlamaParse parse result exposes actual billed credits | **Not confirmed** for Parse (Extract exposes `num_pages_billed`); compute pages × rate and reconcile |

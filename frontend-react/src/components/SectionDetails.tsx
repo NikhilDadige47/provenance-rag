@@ -26,6 +26,7 @@ interface SectionDetailsProps {
   ingest: IngestProgress | null;
   suggestedQuestions?: string[];
   onGoToUpload?: () => void;
+  hasVisitorKey?: boolean;
 }
 
 export const SectionDetails: React.FC<SectionDetailsProps> = ({
@@ -46,6 +47,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
   ingest,
   suggestedQuestions = [],
   onGoToUpload,
+  hasVisitorKey = false,
 }) => {
   const sectionHeaders: Record<NavItem, { title: string; subtitle: string }> = {
     tier_a: {
@@ -57,8 +59,8 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
       subtitle: 'Upload custom PDFs & optionally connect personal LLM API keys',
     },
     limits: {
-      title: 'System Limits & Spend Gates',
-      subtitle: 'Real-time session caps, rate limits, and cost controls',
+      title: 'Session Limits',
+      subtitle: 'Live remaining questions, documents, pages, and session TTL',
     },
   };
 
@@ -139,11 +141,17 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
             onStartIngest={onStartIngest}
             ingest={ingest}
             suggestedQuestions={suggestedQuestions}
+            usage={usage}
           />
         )}
 
         {activeNav === 'limits' && (
-          <LimitsPanel usage={usage} scope={scope} />
+          <LimitsPanel
+            usage={usage}
+            scope={scope}
+            hasVisitorKey={hasVisitorKey}
+            onAddKey={onGoToUpload}
+          />
         )}
       </div>
     </section>

@@ -9,6 +9,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.security.credit_config import DAILY_GLOBAL, VISITOR_ALLOWANCE
 from src.security.secret import Secret
 
 
@@ -73,20 +74,26 @@ class OwnerConfig(BaseSettings):
     kill_switch_disable_uploads: bool = Field(default=False)
     kill_switch_disable_owner_llm: bool = Field(default=False)
 
-    # Per-Session Caps
-    session_max_chunks_embedded: int = Field(default=1500)
-    session_max_rerank_calls: int = Field(default=30)
-    session_max_questions_owner_llm: int = Field(default=15)
-    session_max_questions_own_llm: int = Field(default=100)
-    session_max_documents: int = Field(default=3)
-    session_max_total_pages: int = Field(default=30)
+    # Per-session caps — defaults live in credit_config.VISITOR_ALLOWANCE
+    session_max_chunks_embedded: int = Field(
+        default=VISITOR_ALLOWANCE["session_max_chunks_embedded"]
+    )
+    session_max_rerank_calls: int = Field(default=VISITOR_ALLOWANCE["session_max_rerank_calls"])
+    session_max_questions_owner_llm: int = Field(
+        default=VISITOR_ALLOWANCE["session_max_questions_owner_llm"]
+    )
+    session_max_questions_own_llm: int = Field(
+        default=VISITOR_ALLOWANCE["session_max_questions_own_llm"]
+    )
+    session_max_documents: int = Field(default=VISITOR_ALLOWANCE["session_max_documents"])
+    session_max_total_pages: int = Field(default=VISITOR_ALLOWANCE["session_max_total_pages"])
     session_ttl_hours: int = Field(default=2)
 
-    # Daily Global Caps
-    daily_max_chunks_embedded: int = Field(default=25000)
-    daily_max_rerank_calls: int = Field(default=500)
-    daily_max_owner_llm_tokens: int = Field(default=500000)
-    daily_max_jobs: int = Field(default=100)
+    # Daily global caps — defaults live in credit_config.DAILY_GLOBAL
+    daily_max_chunks_embedded: int = Field(default=DAILY_GLOBAL["max_chunks_embedded"])
+    daily_max_rerank_calls: int = Field(default=DAILY_GLOBAL["max_rerank_calls"])
+    daily_max_owner_llm_tokens: int = Field(default=DAILY_GLOBAL["max_owner_llm_tokens"])
+    daily_max_jobs: int = Field(default=DAILY_GLOBAL["max_jobs"])
 
 
 class VisitorKeys(BaseModel):

@@ -9,12 +9,29 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { Button } from './ui/button';
-import { UploadedDoc, LLMConfig } from '../types';
+import { UploadedDoc, LLMConfig, UsageInfo } from '../types';
 import { api } from '../lib/api';
 import { IngestProgress } from '../lib/ingestProgress';
+import { parserDisplay, readUsage } from '../lib/quota';
 import { previewUrlForDoc } from '../lib/uploadedFiles';
 import { DocViewerModal, DemoDocData } from './DocViewerModal';
 import { TierCKeys } from './TierCKeys';
+
+function ParserBadge({ parser, degraded }: { parser: string; degraded?: boolean }) {
+  const info = parserDisplay(parser);
+  const isDegraded = degraded ?? info.degraded;
+  return (
+    <span
+      className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+        isDegraded
+          ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/25'
+          : 'text-primary bg-primary/10 border-primary/20'
+      }`}
+    >
+      {isDegraded ? 'Basic extract' : info.label}
+    </span>
+  );
+}
 
 interface TierBUploadProps {
   documents: UploadedDoc[];
@@ -25,6 +42,7 @@ interface TierBUploadProps {
   onStartIngest: (file: File) => void;
   ingest: IngestProgress | null;
   suggestedQuestions?: string[];
+  usage?: UsageInfo | null;
 }
 
 export const TierBUpload: React.FC<TierBUploadProps> = ({
@@ -36,6 +54,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   onStartIngest,
   ingest,
   suggestedQuestions = [],
+  usage = null,
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +68,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   const isUploading = Boolean(ingest && ingest.phase !== 'done' && ingest.phase !== 'error');
   const uploadProgress =
     ingest && ingest.phase !== 'error' ? { stage: ingest.stage, pct: ingest.pct } : null;
+  const quota = readUsage(usage);
+  const pagesFromDocs = documents.reduce((sum, doc) => sum + (doc.page_count || 0), 0);
+  const docsUsed = Math.max(quota.docsUsed, documents.length);
+  const pagesUsed = Math.max(quota.pagesUsed, pagesFromDocs);
+  const docsRemaining = Math.max(0, quota.docsMax - docsUsed);
+  const pagesRemaining = Math.max(0, quota.pagesMax - pagesUsed);
+  const atDocCap = docsRemaining === 0;
+  const atPageCap = pagesRemaining === 0;
 
   const handleToggleCustomKey = (checked: boolean) => {
     setUseCustomKey(checked);
@@ -62,6 +89,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   const startIngestionForFile = (file: File) => {
     if (isUploading) {
       onToast('A document is already indexing. Please wait until it finishes.', 'warning');
+      return;
+    }
+    if (atDocCap) {
+      onToast(`This session already has ${quota.docsMax} documents.`, 'warning');
+      return;
+    }
+    if (atPageCap) {
+      onToast(`This session already used ${quota.pagesMax} pages.`, 'warning');
       return;
     }
     if (!file.name.toLowerCase().endsWith('.pdf')) {
@@ -97,11 +132,21 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
     <div className="space-y-4">
       {/* Upload Box */}
       <div className="border border-border/80 rounded-lg p-5 surface-inset shadow-sm space-y-4">
-        <div className="space-y-0.5">
-          <h3 className="font-semibold text-base text-foreground">Document Ingestion</h3>
-          <p className="text-xs text-muted-foreground">
-            Isolated session · Max 10MB · 30 pages · Owner-paid parse · TTL shred
-          </p>
+        <div className="space-y-2">
+          <div className="space-y-0.5">
+            <h3 className="font-semibold text-base text-foreground">Document Ingestion</h3>
+            <p className="text-xs text-muted-foreground">
+              Isolated session · Max 10MB · Owner-paid parse · TTL shred
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full border border-border bg-muted/40">
+              {docsRemaining} of {quota.docsMax} docs left
+            </span>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full border border-border bg-muted/40">
+              {pagesRemaining} of {quota.pagesMax} pages left
+            </span>
+          </div>
         </div>
 
         {/* Drag and Drop Zone */}
@@ -118,12 +163,12 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
               startIngestionForFile(e.dataTransfer.files[0]);
             }
           }}
-          onClick={() => !isUploading && fileInputRef.current?.click()}
+          onClick={() => !isUploading && !atDocCap && !atPageCap && fileInputRef.current?.click()}
           className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
             dragActive
               ? 'border-primary bg-primary/5'
               : 'border-border/80 hover:border-primary/50 hover:bg-muted/20'
-          } ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
+          } ${isUploading || atDocCap || atPageCap ? 'opacity-50 pointer-events-none' : ''}`}
         >
           <input
             ref={fileInputRef}
@@ -142,10 +187,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
           <p className="text-xs font-medium text-foreground">
             {ingest?.fileName && isUploading
               ? ingest.fileName
-              : 'Click to browse or drop your PDF here'}
+              : atDocCap
+                ? 'Document cap reached for this session'
+                : atPageCap
+                  ? 'Page cap reached for this session'
+                  : 'Click to browse or drop your PDF here'}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            PDF files only (max 10MB, up to 30 pages)
+            PDF files only (max 10MB, up to {quota.pagesMax} pages)
           </p>
         </div>
 
@@ -235,7 +284,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             <h4 className="font-semibold text-sm">Session Ingested Documents</h4>
           </div>
           <span className="text-xs font-mono text-muted-foreground">
-            {documents.length} / 3 maximum
+            {docsUsed} / {quota.docsMax} documents · {pagesUsed} / {quota.pagesMax} pages
           </span>
         </div>
 
@@ -268,10 +317,20 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
                         {doc.chunk_count > 0 ? `${doc.chunk_count} chunks` : ''}
                         {!doc.page_count && !doc.chunk_count ? 'Ready to preview' : ''}
                       </span>
+                      {(doc.degraded || (doc.quality_warnings && doc.quality_warnings.length > 0)) && (
+                        <span className="text-[11px] text-amber-700 dark:text-amber-400 block mt-0.5">
+                          {doc.degraded
+                            ? 'Basic extract — premium parsers were skipped'
+                            : doc.quality_warnings?.[0]}
+                        </span>
+                      )}
                     </span>
                   </span>
-                  <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 shrink-0">
-                    View PDF
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    <ParserBadge parser={doc.parser_tier} degraded={doc.degraded} />
+                    <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                      View PDF
+                    </span>
                   </span>
                 </button>
                 <Button
