@@ -291,7 +291,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   return (
     <div className="relative flex flex-col h-full flex-1 surface-panel overflow-hidden">
       {/* Chat Header stays clickable so remaining quota / TTL is always reachable */}
-      <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between gap-3 text-xs shrink-0 z-50">
+      <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between gap-3 text-xs shrink-0 z-10">
         <div className="flex items-center gap-2.5 min-w-0">
           {onOpenMobileMenu && (
             <Button

@@ -29,15 +29,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from src.api.caps import (
-    MAX_DAILY_QUESTIONS_PER_IP,
     MAX_REQUESTS_PER_WINDOW,
     check_and_increment_daily_rerank,
+    check_and_increment_ip_owner_questions,
     check_and_increment_session_byok_llm,
     check_and_increment_session_owner_llm,
-    check_ip_daily_question_limit,
     check_kill_switch_owner_llm,
+    client_ip_from_request,
     enforce_rate_limits,
-    increment_ip_daily_questions,
+    get_ip_daily_owner_questions,
 )
 from src.api.logging import (
     generate_request_id,
@@ -322,7 +322,7 @@ async def get_usage(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
 
     row_dict = dict(row)
-    q_owner_used = int(row_dict.get("questions_owner_llm", 0) or 0)
+    session_owner_used = int(row_dict.get("questions_owner_llm", 0) or 0)
     q_own_used = int(row_dict.get("questions_own_llm", 0) or 0)
     rerank_used = int(row_dict.get("rerank_calls", 0) or 0)
     docs_used = int(row_dict.get("docs_count", 0) or 0)
@@ -330,6 +330,9 @@ async def get_usage(
     q_owner_max = cfg.session_max_questions_owner_llm
     q_own_max = cfg.session_max_questions_own_llm
     rerank_max = cfg.session_max_rerank_calls
+    client_ip = client_ip_from_request(request)
+    ip_owner_used = get_ip_daily_owner_questions(db, client_ip)
+    q_owner_used = max(session_owner_used, ip_owner_used)
     owner_remaining = max(0, q_owner_max - q_owner_used)
     own_remaining = max(0, q_own_max - q_own_used)
     at_capacity = owner_remaining == 0 and own_remaining == 0
@@ -362,7 +365,7 @@ async def get_usage(
         session_docs_max=cfg.session_max_documents,
         session_pages_used=pages_used,
         session_pages_max=cfg.session_max_total_pages,
-        daily_questions_per_ip_max=MAX_DAILY_QUESTIONS_PER_IP,
+        daily_questions_per_ip_max=q_owner_max,
         requests_per_minute_max=MAX_REQUESTS_PER_WINDOW,
         owner_llm_provider=cfg.default_llm_provider,
         owner_llm_model=cfg.default_llm_model,
@@ -434,16 +437,14 @@ async def chat(
     if not using_visitor_key:
         check_kill_switch_owner_llm(cfg)
 
-    # ── Gate 3: Per-IP daily question cap ──────────────────────────────────
-    client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
-        request.client.host if request.client else "unknown"
-    )
-    check_ip_daily_question_limit(client_ip)
+    # ── Gate 3: Per-IP daily owner-question cap (survives refresh / private tab)
+    client_ip = client_ip_from_request(request)
 
-    # ── Gate 4: Per-session question cap (increment BEFORE the pipeline) ───
+    # ── Gate 4: Question caps (increment BEFORE the pipeline) ───
     if using_visitor_key:
         check_and_increment_session_byok_llm(db, session.session_id, cfg)
     else:
+        check_and_increment_ip_owner_questions(db, client_ip, cfg)
         check_and_increment_session_owner_llm(db, session.session_id, cfg)
 
     # ── Resolve LLM adapter ────────────────────────────────────────────────
@@ -648,9 +649,6 @@ async def chat(
             for idx, p in enumerate(expansion_res.passages, start=1)
         ]
     sources = _dedupe_source_cards(raw_sources)
-
-    # ── Increment IP daily counter (only after successful generation) ───────
-    increment_ip_daily_questions(client_ip)
 
     # ── Privacy log: metadata only ──────────────────────────────────────────
     log_chat_response(

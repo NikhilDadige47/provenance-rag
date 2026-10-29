@@ -63,6 +63,8 @@ def test_demo_corpus_pdf_preview_served(client: TestClient) -> None:
     assert res.status_code == 200
     assert "pdf" in res.headers.get("content-type", "").lower()
     assert res.content[:5] == b"%PDF-"
+    assert res.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    assert "frame-ancestors 'self'" in res.headers.get("Content-Security-Policy", "")
 
     missing = client.get("/demo_corpus/us_constitution_bill_of_rights.pdf")
     assert missing.status_code == 404

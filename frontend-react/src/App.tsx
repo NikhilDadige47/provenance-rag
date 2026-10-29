@@ -5,6 +5,7 @@ import { ChatContainer } from './components/ChatContainer';
 import { SectionFooter } from './components/SectionFooter';
 import { DeleteModal } from './components/DeleteModal';
 import { Toast, ToastMessage } from './components/Toast';
+import { LandingPage } from './components/LandingPage';
 import { AccessTier, UsageInfo, ExampleQuestion, UploadedDoc, LLMConfig } from './types';
 import { api } from './lib/api';
 import {
@@ -26,12 +27,35 @@ import {
 const DEFAULT_MIDDLE_WIDTH = 480;
 const MIN_MIDDLE_WIDTH = 400;
 
+type Surface = 'landing' | 'app';
+type Entry = 'demo' | 'upload';
+
+function readHash(): { surface: Surface; entry: Entry } {
+  const raw = (window.location.hash || '#/').replace(/^#/, '') || '/';
+  if (raw.startsWith('/upload')) return { surface: 'app', entry: 'upload' };
+  if (raw.startsWith('/app') || raw.startsWith('/demo') || raw.startsWith('/limits')) {
+    return { surface: 'app', entry: 'demo' };
+  }
+  return { surface: 'landing', entry: 'demo' };
+}
+
+function writeHash(surface: Surface, entry: Entry = 'demo') {
+  const next =
+    surface === 'landing' ? '#/' : entry === 'upload' ? '#/upload' : '#/app';
+  if (window.location.hash !== next) {
+    window.history.replaceState(null, '', next);
+  }
+}
+
 export function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('provenance_theme_v2');
     return (saved as 'light' | 'dark') || 'dark';
   });
-  const [activeNav, setActiveNav] = useState<NavItem>('tier_a');
+  const [surface, setSurface] = useState<Surface>(() => readHash().surface);
+  const [activeNav, setActiveNav] = useState<NavItem>(
+    () => (readHash().entry === 'upload' ? 'tier_b' : 'tier_a')
+  );
   const [currentTier, setCurrentTier] = useState<AccessTier>('tier_a');
   const [scope, setScope] = useState<string>('demo');
   const [usage, setUsage] = useState<UsageInfo | null>(null);
@@ -122,19 +146,38 @@ export function App() {
     }
   };
 
-  // Initialize session on mount & register automatic unload/reload cleanup listeners
+  const sessionStarted = useRef(false);
+
+  const enterWorkspace = (entry: Entry) => {
+    setActiveNav(entry === 'upload' ? 'tier_b' : 'tier_a');
+    if (entry === 'upload') {
+      setCurrentTier('tier_b');
+      api.setTier('tier_b');
+      setScope('isolated');
+    } else {
+      setCurrentTier('tier_a');
+      api.setTier('tier_a');
+      setScope('demo');
+    }
+    setSurface('app');
+    writeHash('app', entry);
+  };
+
+  const returnToOverview = () => {
+    setSurface('landing');
+    writeHash('landing');
+  };
+
+  // Session starts only after the visitor leaves the overview. Landing is static.
   useEffect(() => {
+    if (surface !== 'app' || sessionStarted.current) return;
+    sessionStarted.current = true;
+
     const initApp = async () => {
       try {
-        // If previous session left uploaded vectors/documents, purge them immediately
-        const previousSession = sessionStorage.getItem('provenance_active_session');
-        if (previousSession) {
-          await api.purgeSession(previousSession);
-        }
-
-        const sess = await api.createSession('tier_a');
+        const sess = await api.ensureSession('tier_a');
         setScope(sess.scope || 'demo');
-        refreshUsage();
+        await refreshUsage();
         const chips = await api.getExamples();
         setExampleChips(chips);
         refreshDocuments();
@@ -144,19 +187,27 @@ export function App() {
     };
 
     initApp();
+  }, [surface]);
 
-    // Register browser close/unload lifecycle listeners to auto-wipe vectors from Qdrant
-    const handleUnload = () => {
-      api.purgeOnUnload();
+  useEffect(() => {
+    const onHash = () => {
+      const next = readHash();
+      setSurface(next.surface);
+      if (next.surface !== 'app') return;
+      if (next.entry === 'upload') {
+        setActiveNav('tier_b');
+        setCurrentTier('tier_b');
+        api.setTier('tier_b');
+        setScope('isolated');
+      } else {
+        setActiveNav('tier_a');
+        setCurrentTier('tier_a');
+        api.setTier('tier_a');
+        setScope('demo');
+      }
     };
-
-    window.addEventListener('pagehide', handleUnload);
-    window.addEventListener('beforeunload', handleUnload);
-
-    return () => {
-      window.removeEventListener('pagehide', handleUnload);
-      window.removeEventListener('beforeunload', handleUnload);
-    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
   // Keep ingest polling at the App level so it survives leaving the Upload panel.
@@ -273,11 +324,11 @@ export function App() {
   const handleSelectTier = async (tier: AccessTier) => {
     setCurrentTier(tier);
     api.setTier(tier);
+    setScope(tier === 'tier_a' ? 'demo' : 'isolated');
     try {
-      const sess = await api.createSession(tier);
-      setScope(sess.scope || (tier === 'tier_a' ? 'demo' : 'isolated'));
-      refreshUsage();
-      refreshDocuments();
+      await api.ensureSession(tier);
+      await refreshUsage();
+      await refreshDocuments();
     } catch (err: any) {
       addToast(err.message || 'Failed to switch tier', 'error');
     }
@@ -403,6 +454,20 @@ export function App() {
 
   const hideChat = activeNav === 'limits';
 
+  if (surface === 'landing') {
+    return (
+      <>
+        <LandingPage
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onTryDemo={() => enterWorkspace('demo')}
+          onUpload={() => enterWorkspace('upload')}
+        />
+        <Toast toasts={toasts} onDismiss={removeToast} />
+      </>
+    );
+  }
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden surface-shell text-foreground transition-colors select-none">
       <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -415,6 +480,7 @@ export function App() {
           isCollapsed={isNavCollapsed}
           onToggleCollapse={() => setIsNavCollapsed((prev) => !prev)}
           isIngesting={isIngesting}
+          onBrandClick={returnToOverview}
         />
 
         {/* SECTION 2: Details Panel for Selected Menu Item (Equally divided 50/50 by default) */}

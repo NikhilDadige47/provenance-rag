@@ -20,16 +20,14 @@ import pytest
 from fastapi import HTTPException
 
 from src.api.caps import (
-    MAX_DAILY_QUESTIONS_PER_IP,
     MAX_REQUESTS_PER_WINDOW,
-    _ip_daily_questions,
     _ip_request_timestamps,
     assert_demo_scope_readonly,
     check_and_increment_daily_rerank,
+    check_and_increment_ip_owner_questions,
     check_and_increment_session_byok_llm,
     check_and_increment_session_owner_llm,
     check_and_increment_session_rerank,
-    check_ip_daily_question_limit,
     check_ip_rate_limit,
     check_kill_switch_owner_llm,
     check_kill_switch_uploads,
@@ -190,22 +188,29 @@ class TestIPRateLimit:
 
 
 class TestIPDailyQuestionCap:
-    def _clear_daily(self, ip: str) -> None:
-        _ip_daily_questions.pop(ip, None)
-
-    def test_daily_question_cap_triggers(self) -> None:
+    def test_daily_question_cap_triggers(self, tmp_db: DatabaseManager) -> None:
         test_ip = "203.0.113.42"
-        self._clear_daily(test_ip)
-        today = datetime.now(UTC).strftime("%Y-%m-%d")
-
-        _ip_daily_questions[test_ip][today] = MAX_DAILY_QUESTIONS_PER_IP
-
+        cfg = OwnerConfig(session_max_questions_owner_llm=2)
+        check_and_increment_ip_owner_questions(tmp_db, test_ip, cfg)
+        check_and_increment_ip_owner_questions(tmp_db, test_ip, cfg)
         with pytest.raises(HTTPException) as exc_info:
-            check_ip_daily_question_limit(test_ip)
+            check_and_increment_ip_owner_questions(tmp_db, test_ip, cfg)
         assert exc_info.value.status_code == 429
-        assert "daily question limit" in exc_info.value.detail.lower()
+        assert "owner-funded" in exc_info.value.detail.lower()
 
-        self._clear_daily(test_ip)
+    def test_new_session_same_ip_shares_budget(self, tmp_db: DatabaseManager) -> None:
+        cfg = OwnerConfig(session_max_questions_owner_llm=1)
+        check_and_increment_ip_owner_questions(tmp_db, "198.51.100.20", cfg)
+        with pytest.raises(HTTPException) as exc_info:
+            check_and_increment_ip_owner_questions(tmp_db, "198.51.100.20", cfg)
+        assert exc_info.value.status_code == 429
+
+    def test_loopback_aliases_share_budget(self, tmp_db: DatabaseManager) -> None:
+        cfg = OwnerConfig(session_max_questions_owner_llm=1)
+        check_and_increment_ip_owner_questions(tmp_db, "127.0.0.1", cfg)
+        with pytest.raises(HTTPException) as exc_info:
+            check_and_increment_ip_owner_questions(tmp_db, "::1", cfg)
+        assert exc_info.value.status_code == 429
 
 
 # ---------------------------------------------------------------------------

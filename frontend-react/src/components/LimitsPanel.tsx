@@ -108,7 +108,7 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({
           usedLabel={
             hasVisitorKey ? `Used ${q.ownUsed} on your key` : `Used ${q.ownerUsed} owner questions`
           }
-          hint="Resets with a new session"
+          hint="Resets at midnight UTC — not on refresh"
           warn={ownerWarn}
         />
 
@@ -135,7 +135,7 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({
               Session TTL
             </div>
             <p className="font-mono text-sm">{formatTtl(ttl)}</p>
-            <p className="text-muted-foreground">Wipes on tab close or expiry</p>
+            <p className="text-muted-foreground">Uploads wipe on expiry or Delete</p>
           </div>
           <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">

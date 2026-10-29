@@ -43,7 +43,7 @@ from src.api.jobs import JobRunner
 from src.api.lifecycle import run_ttl_cleanup_loop
 from src.api.observability import record_request
 from src.api.observability import snapshot as metrics_snapshot
-from src.api.sessions import SessionCreateResponse, VisitorLLMKeys, create_session
+from src.api.sessions import SessionCreateResponse, VisitorLLMKeys, create_session, resume_session
 from src.api.upload import router as upload_router
 from src.retrieval.store import QdrantVectorStore
 from src.security.config import OwnerConfig
@@ -135,19 +135,33 @@ app = FastAPI(
 )
 
 
+_DEV_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+)
+
+
 def _cors_origins() -> list[str]:
-    """Lock CORS to the frontend origin in production; allow * only in development."""
+    """Lock CORS to concrete origins. Wildcard + credentials is rejected by browsers."""
     try:
         cfg = OwnerConfig.from_env()
     except Exception:
-        return ["*"]
+        return list(_DEV_CORS_ORIGINS)
     if cfg.app_env.lower() == "production":
         origin = (cfg.frontend_origin or "").strip()
         return [origin] if origin else ["http://localhost:5173"]
     raw = (cfg.cors_origins or "*").strip()
     if raw == "*":
-        return ["*"]
-    return [part.strip() for part in raw.split(",") if part.strip()] or ["*"]
+        origins = list(_DEV_CORS_ORIGINS)
+        extra = (cfg.frontend_origin or "").strip()
+        if extra and extra not in origins:
+            origins.append(extra)
+        return origins
+    return [part.strip() for part in raw.split(",") if part.strip()] or list(_DEV_CORS_ORIGINS)
 
 
 app.add_middleware(
@@ -235,12 +249,18 @@ def _apply_security_headers(request: Request, response: Any) -> None:
     env = (getattr(cfg, "app_env", "development") or "development").lower()
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["X-Frame-Options"] = "DENY"
     if env == "production":
         response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains; preload"
         )
     path = request.url.path
+    is_embeddable_pdf = path.startswith("/demo_corpus/") and path.lower().endswith(".pdf")
+    if is_embeddable_pdf:
+        # Same-origin iframe preview of the demo filings. The rest of the app stays unframable.
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'self'"
+        return
+    response.headers["X-Frame-Options"] = "DENY"
     if path.startswith("/docs") or path.startswith("/redoc") or path.startswith("/openapi"):
         csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     else:
@@ -251,6 +271,8 @@ def _apply_security_headers(request: Request, response: Any) -> None:
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: blob:; "
             "connect-src 'self'; "
+            "frame-src 'self' blob:; "
+            "object-src 'self' blob:; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self'"
@@ -397,6 +419,42 @@ async def terms_text() -> FileResponse:
 # ---------------------------------------------------------------------------
 
 
+def _set_session_cookie(response: Response, session_id: str, cfg: OwnerConfig) -> None:
+    response.set_cookie(
+        key="session_token",
+        value=session_id,
+        httponly=True,
+        secure=(cfg.app_env or "").lower() == "production",
+        samesite="lax",
+        max_age=int(cfg.session_ttl_hours * 3600),
+        path="/",
+    )
+
+
+@app.get(
+    "/session",
+    response_model=SessionCreateResponse,
+    tags=["session"],
+    summary="Resume the HttpOnly session cookie if it is still valid",
+)
+async def resume_session_endpoint(request: Request, response: Response) -> SessionCreateResponse:
+    """Refresh does not mint a new quota. Private tabs still share the per-IP budget."""
+    db: DatabaseManager = request.app.state.db
+    cfg: OwnerConfig = getattr(request.app.state, "cfg", None) or OwnerConfig()
+    token = request.cookies.get("session_token")
+    authorization = request.headers.get("Authorization") or ""
+    if not token and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No session to resume. Call POST /session to begin.",
+        )
+    resumed = resume_session(db=db, token=token)
+    _set_session_cookie(response, resumed.session_id, cfg)
+    return resumed
+
+
 @app.post(
     "/session",
     response_model=SessionCreateResponse,
@@ -418,15 +476,7 @@ async def create_session_endpoint(
     db: DatabaseManager = request.app.state.db
     created = create_session(db=db, visitor_keys=visitor_keys)
     cfg: OwnerConfig = getattr(request.app.state, "cfg", None) or OwnerConfig()
-    response.set_cookie(
-        key="session_token",
-        value=created.session_id,
-        httponly=True,
-        secure=(cfg.app_env or "").lower() == "production",
-        samesite="lax",
-        max_age=int(cfg.session_ttl_hours * 3600),
-        path="/",
-    )
+    _set_session_cookie(response, created.session_id, cfg)
     return created
 
 

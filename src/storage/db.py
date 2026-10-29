@@ -12,7 +12,8 @@ from typing import Any
 
 from src.ingest.chunking.models import ParentChunk
 
-DEFAULT_DB_PATH = Path("provenance_rag.db")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_DB_PATH = _PROJECT_ROOT / "provenance_rag.db"
 
 
 class DatabaseManager:
@@ -25,6 +26,8 @@ class DatabaseManager:
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def init_db(self) -> None:
@@ -126,6 +129,19 @@ class DatabaseManager:
                     rerank_calls INTEGER DEFAULT 0,
                     owner_llm_tokens INTEGER DEFAULT 0,
                     jobs INTEGER DEFAULT 0
+                )
+                """
+            )
+
+            # 7. Per-IP daily counters (hashed IP). Survives refresh, private tabs, and process restart.
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ip_usage_daily (
+                    ip_hash TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    owner_questions INTEGER DEFAULT 0,
+                    uploads INTEGER DEFAULT 0,
+                    PRIMARY KEY (ip_hash, date)
                 )
                 """
             )

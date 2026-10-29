@@ -45,6 +45,7 @@ def test_health_and_security_headers() -> None:
     assert "frame-ancestors 'none'" in resp.headers["Content-Security-Policy"] or resp.headers[
         "X-Frame-Options"
     ] == "DENY"
+    assert "frame-src 'self' blob:" in resp.headers["Content-Security-Policy"]
 
 
 def test_metrics_have_no_content_fields() -> None:

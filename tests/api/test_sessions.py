@@ -77,6 +77,18 @@ class TestSessionCreation:
         assert row is not None, f"Session {data['session_id']} not found in DB"
         assert row["session_id"] == data["session_id"]
 
+    def test_get_session_resumes_cookie(self, client_with_state: TestClient) -> None:
+        created = client_with_state.post("/session")
+        token = created.json()["session_id"]
+        resumed = client_with_state.get("/session")
+        assert resumed.status_code == 200
+        assert resumed.json()["session_id"] == token
+
+    def test_get_session_without_cookie_is_401(self, client_with_state: TestClient) -> None:
+        client_with_state.cookies.clear()
+        resp = client_with_state.get("/session")
+        assert resp.status_code == 401
+
     def test_creates_tier_c_with_llm_key(self, client_with_state: TestClient) -> None:
         """Supplying X-LLM-Key header should produce Tier C session."""
         resp = client_with_state.post(

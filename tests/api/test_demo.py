@@ -103,7 +103,7 @@ class TestTierAUsageLimits:
         assert usage["session_docs_max"] == app.state.cfg.session_max_documents
         assert usage["session_pages_max"] == app.state.cfg.session_max_total_pages
         assert usage["session_ttl_seconds"] > 0
-        assert usage["daily_questions_per_ip_max"] == 100
+        assert usage["daily_questions_per_ip_max"] == app.state.cfg.session_max_questions_owner_llm
         assert usage["requests_per_minute_max"] == 20
         assert usage["owner_llm_provider"] == app.state.cfg.default_llm_provider
         assert usage["owner_llm_model"] == app.state.cfg.default_llm_model

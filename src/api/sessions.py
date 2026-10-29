@@ -110,7 +110,8 @@ def create_session(
     tier_messages = {
         AccessTier.TIER_A_DEMO: (
             "Welcome! You can chat over the demo corpus with no setup required. "
-            f"Owner-funded questions are limited (up to {_cfg.session_max_questions_owner_llm} per session)."
+            f"Owner-funded questions are limited to {_cfg.session_max_questions_owner_llm} per day "
+            "on this connection."
         ),
         AccessTier.TIER_B_UPLOAD: (
             "Tier B active. You can upload PDFs with the free local parser or your own parser key. "
@@ -127,6 +128,20 @@ def create_session(
         tier=tier.value,
         expires_at=expires_at,
         message=tier_messages[tier],
+    )
+
+
+def resume_session(db: DatabaseManager, token: str) -> SessionCreateResponse:
+    """Return the existing session if the token is still valid.
+
+    Raises HTTP 401 when the token is missing, unknown, or expired.
+    """
+    state = _load_and_validate_session(token, db)
+    return SessionCreateResponse(
+        session_id=state.session_id,
+        tier=state.tier.value,
+        expires_at=state.expires_at,
+        message="Session resumed. Owner-funded question budget is shared across tabs for today.",
     )
 
 

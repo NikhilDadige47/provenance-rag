@@ -3,14 +3,14 @@
 Implements roadmap P5-T2 & P5-T3 & architecture §9.1:
 
 Per-session caps (atomic SQLite updates):
-  - owner-LLM questions  (~15 per session, configurable)
+  - owner-LLM questions  (~15, also enforced per IP per day)
   - own-LLM-key questions (~100 per session)
   - rerank calls          (~30 per session)
   - chunks embedded       (~1500 per session)
 
 Per-IP rate limits:
   - N requests per rolling minute
-  - Daily question cap per IP
+  - Daily owner-funded question cap per IP (persisted; refresh/private tab cannot reset)
   - Daily upload cap per IP
 
 Daily global caps (usage_daily table):
@@ -26,6 +26,7 @@ Budget alert hooks:
 All cap checks raise HTTP 429 (Too Many Requests) with human-readable messages.
 """
 
+import hashlib
 import logging
 import threading
 from collections import defaultdict, deque
@@ -35,6 +36,7 @@ from typing import Any
 from fastapi import HTTPException, Request, status
 
 from src.security.config import OwnerConfig
+from src.security.credit_config import VISITOR_ALLOWANCE
 from src.storage.db import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -48,17 +50,11 @@ _ip_lock = threading.Lock()
 # ip -> deque of request timestamps (float epoch) within the rolling window
 _ip_request_timestamps: dict[str, deque[float]] = defaultdict(deque)
 
-# ip -> date string -> question count
-_ip_daily_questions: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-
-# ip -> date string -> upload count
-_ip_daily_uploads: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-
 # Rate limit: max requests per IP in RATE_WINDOW_SECONDS
 RATE_WINDOW_SECONDS = 60
 MAX_REQUESTS_PER_WINDOW = 20  # 20 req/min per IP (generous for portfolio)
-MAX_DAILY_QUESTIONS_PER_IP = 100  # daily question cap per IP
-MAX_DAILY_UPLOADS_PER_IP = 10  # daily upload cap per IP (Phase 6)
+MAX_DAILY_QUESTIONS_PER_IP = int(VISITOR_ALLOWANCE["session_max_questions_owner_llm"])
+MAX_DAILY_UPLOADS_PER_IP = int(VISITOR_ALLOWANCE["docs_day"])
 
 
 def _current_date_str() -> str:
@@ -67,6 +63,23 @@ def _current_date_str() -> str:
 
 def _current_epoch() -> float:
     return datetime.now(UTC).timestamp()
+
+
+def _canonical_ip(client_ip: str) -> str:
+    """Collapse loopback aliases so localhost and 127.0.0.1 share one budget."""
+    ip = (client_ip or "").strip().strip("[]").lower()
+    if ip.startswith("::ffff:"):
+        ip = ip[7:]
+    if ip.count(":") == 1 and "." in ip:
+        ip = ip.split(":", 1)[0]
+    if ip in {"::1", "localhost", "0:0:0:0:0:0:0:1"} or ip.startswith("127."):
+        return "127.0.0.1"
+    return ip
+
+
+def _hash_ip(client_ip: str) -> str:
+    """Store a digest, never the raw address."""
+    return hashlib.sha256(f"provenance-ip-v1:{_canonical_ip(client_ip)}".encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +93,7 @@ def check_ip_rate_limit(client_ip: str) -> None:
     Raises:
         HTTPException 429 if the IP exceeds MAX_REQUESTS_PER_WINDOW in the last minute.
     """
+    client_ip = _canonical_ip(client_ip) or client_ip
     now = _current_epoch()
     cutoff = now - RATE_WINDOW_SECONDS
 
@@ -103,66 +117,109 @@ def check_ip_rate_limit(client_ip: str) -> None:
         ts_queue.append(now)
 
 
-def check_ip_daily_question_limit(client_ip: str) -> None:
-    """Enforce per-IP daily question cap.
+def get_ip_daily_owner_questions(db: DatabaseManager, client_ip: str) -> int:
+    """Owner-funded questions already used by this IP today (0 if none)."""
+    today = _current_date_str()
+    ip_hash = _hash_ip(client_ip)
+    with db._get_connection() as conn:
+        row = conn.execute(
+            "SELECT owner_questions FROM ip_usage_daily WHERE ip_hash = ? AND date = ?",
+            (ip_hash, today),
+        ).fetchone()
+    return int(row["owner_questions"] or 0) if row else 0
+
+
+def check_and_increment_ip_owner_questions(
+    db: DatabaseManager, client_ip: str, cfg: OwnerConfig
+) -> int:
+    """Atomically consume one owner-funded question for this IP today.
+
+    Refresh and private tabs share this counter. BYOK chats must not call it.
 
     Raises:
-        HTTPException 429 if the IP has exceeded MAX_DAILY_QUESTIONS_PER_IP today.
+        HTTPException 429 when today's owner-funded budget is gone.
     """
+    cap = cfg.session_max_questions_owner_llm
     today = _current_date_str()
-    with _ip_lock:
-        count = _ip_daily_questions[client_ip][today]
-        if count >= MAX_DAILY_QUESTIONS_PER_IP:
+    ip_hash = _hash_ip(client_ip)
+    with db._get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO ip_usage_daily (ip_hash, date, owner_questions, uploads)
+            VALUES (?, ?, 0, 0)
+            ON CONFLICT(ip_hash, date) DO NOTHING
+            """,
+            (ip_hash, today),
+        )
+        cursor.execute(
+            """
+            UPDATE ip_usage_daily
+            SET owner_questions = owner_questions + 1
+            WHERE ip_hash = ? AND date = ? AND owner_questions < ?
+            """,
+            (ip_hash, today, cap),
+        )
+        if cursor.rowcount != 1:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(
-                    f"You have reached the daily question limit of {MAX_DAILY_QUESTIONS_PER_IP} "
-                    "questions per IP address. Please return tomorrow or provide your own API key."
+                    f"You have used all {cap} owner-funded questions for today on this connection. "
+                    "Provide your own LLM API key to continue, or try again tomorrow."
                 ),
                 headers={"Retry-After": "86400"},
             )
+        cursor.execute(
+            "SELECT owner_questions FROM ip_usage_daily WHERE ip_hash = ? AND date = ?",
+            (ip_hash, today),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+    return int(row["owner_questions"] or 1) if row else 1
 
 
-def increment_ip_daily_questions(client_ip: str) -> None:
-    """Increment the IP's daily question counter after a successful chat response."""
+def check_ip_daily_upload_limit(db: DatabaseManager, client_ip: str) -> None:
+    """Enforce per-IP daily upload cap before a job is accepted."""
     today = _current_date_str()
-    with _ip_lock:
-        _ip_daily_questions[client_ip][today] += 1
+    ip_hash = _hash_ip(client_ip)
+    with db._get_connection() as conn:
+        row = conn.execute(
+            "SELECT uploads FROM ip_usage_daily WHERE ip_hash = ? AND date = ?",
+            (ip_hash, today),
+        ).fetchone()
+    count = int(row["uploads"] or 0) if row else 0
+    if count >= MAX_DAILY_UPLOADS_PER_IP:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"You have reached the daily upload limit of {MAX_DAILY_UPLOADS_PER_IP} "
+                "documents per IP address. Please try again tomorrow."
+            ),
+            headers={"Retry-After": "86400"},
+        )
 
 
-def check_ip_daily_upload_limit(client_ip: str) -> None:
-    """Enforce per-IP daily upload cap before a job is accepted.
-
-    Raises:
-        HTTPException 429 if the IP has exceeded MAX_DAILY_UPLOADS_PER_IP today.
-    """
-    today = _current_date_str()
-    with _ip_lock:
-        count = _ip_daily_uploads[client_ip][today]
-        if count >= MAX_DAILY_UPLOADS_PER_IP:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=(
-                    f"You have reached the daily upload limit of {MAX_DAILY_UPLOADS_PER_IP} "
-                    "documents per IP address. Please try again tomorrow."
-                ),
-                headers={"Retry-After": "86400"},
-            )
-
-
-def increment_ip_daily_uploads(client_ip: str) -> None:
+def increment_ip_daily_uploads(db: DatabaseManager, client_ip: str) -> None:
     """Increment the IP's daily upload counter after a job is accepted."""
     today = _current_date_str()
-    with _ip_lock:
-        _ip_daily_uploads[client_ip][today] += 1
+    ip_hash = _hash_ip(client_ip)
+    with db._get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO ip_usage_daily (ip_hash, date, owner_questions, uploads)
+            VALUES (?, ?, 0, 1)
+            ON CONFLICT(ip_hash, date) DO UPDATE SET
+                uploads = uploads + 1
+            """,
+            (ip_hash, today),
+        )
+        conn.commit()
 
 
 def reset_ip_limiters() -> None:
-    """Clear in-process IP counters. Used by tests only."""
+    """Clear in-process IP rate-limit buckets. Used by tests only."""
     with _ip_lock:
         _ip_request_timestamps.clear()
-        _ip_daily_questions.clear()
-        _ip_daily_uploads.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -401,8 +458,8 @@ def check_and_increment_session_owner_llm(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
                 f"You have used all {cfg.session_max_questions_owner_llm} owner-funded questions "
-                "for this session. Provide your own LLM API key (X-LLM-Key header) to continue, "
-                "or start a new session."
+                "for this connection today. Provide your own LLM API key (X-LLM-Key header) "
+                "to continue, or try again tomorrow."
             ),
         )
 
@@ -520,10 +577,18 @@ async def enforce_rate_limits(request: Request) -> None:
 
 
 def client_ip_from_request(request: Request) -> str:
-    """Best-effort client IP (honours the first X-Forwarded-For hop)."""
+    """Stable client identity for daily caps.
+
+    Development / Vite: use the TCP peer (the proxy), not X-Forwarded-For.
+    The forwarded header is spoofable and splits ::1 vs 127.0.0.1 across
+    localhost URLs, which reset the demo budget on refresh or a private tab.
+
+    Production: trust the first X-Forwarded-For hop from the reverse proxy.
+    """
+    peer = request.client.host if request.client and request.client.host else ""
     forwarded = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    if forwarded:
-        return forwarded
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+    cfg = getattr(request.app.state, "cfg", None)
+    env = (getattr(cfg, "app_env", None) or "development").lower()
+    if env == "production":
+        return _canonical_ip(forwarded or peer or "unknown") or "unknown"
+    return _canonical_ip(peer or forwarded or "unknown") or "unknown"

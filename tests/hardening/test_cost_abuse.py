@@ -83,6 +83,61 @@ class TestOwnerQuestionCapBlocksPaidPath:
         assert blocked.status_code == 429
         assert "owner-funded" in blocked.json()["detail"].lower()
 
+    def test_new_session_same_ip_does_not_reset_budget(self, isolated_app) -> None:
+        client, _db, cfg = isolated_app
+        headers = _session(client)
+        with patch("src.api.chat.HybridSearchPipeline.search", new=AsyncMock(side_effect=_empty_search)):
+            for _ in range(cfg.session_max_questions_owner_llm):
+                resp = client.post("/chat", json={"question": "What is net sales?", "history": []}, headers=headers)
+                assert resp.status_code == 200
+            other = _session(client)
+            blocked = client.post(
+                "/chat", json={"question": "What is net sales?", "history": []}, headers=other
+            )
+        assert blocked.status_code == 429
+
+    def test_cookie_resume_keeps_same_session(self, isolated_app) -> None:
+        client, _db, _cfg = isolated_app
+        created = client.post("/session")
+        token = created.json()["session_id"]
+        resumed = client.get("/session")
+        assert resumed.status_code == 200
+        assert resumed.json()["session_id"] == token
+
+    def test_usage_meter_stays_exhausted_on_new_session(self, isolated_app) -> None:
+        client, _db, cfg = isolated_app
+        headers = _session(client)
+        with patch("src.api.chat.HybridSearchPipeline.search", new=AsyncMock(side_effect=_empty_search)):
+            for _ in range(cfg.session_max_questions_owner_llm):
+                resp = client.post(
+                    "/chat", json={"question": "What is net sales?", "history": []}, headers=headers
+                )
+                assert resp.status_code == 200
+        other = _session(client)
+        usage = client.get("/usage", headers=other)
+        assert usage.status_code == 200
+        body = usage.json()
+        assert body["questions_owner_llm_remaining"] == 0
+        assert body["owner_questions_exhausted"] is True
+
+    def test_spoofed_forwarded_for_does_not_reset_dev_budget(self, isolated_app) -> None:
+        client, _db, cfg = isolated_app
+        headers = _session(client)
+        with patch("src.api.chat.HybridSearchPipeline.search", new=AsyncMock(side_effect=_empty_search)):
+            for _ in range(cfg.session_max_questions_owner_llm):
+                resp = client.post(
+                    "/chat", json={"question": "What is net sales?", "history": []}, headers=headers
+                )
+                assert resp.status_code == 200
+            spoofed = {
+                **headers,
+                "X-Forwarded-For": "203.0.113.77",
+            }
+            blocked = client.post(
+                "/chat", json={"question": "What is net sales?", "history": []}, headers=spoofed
+            )
+        assert blocked.status_code == 429
+
 
 class TestKillSwitchUnderLoad:
     def test_owner_llm_kill_switch_returns_503(self, isolated_app) -> None:
@@ -121,17 +176,16 @@ class TestIPLimits:
         assert exc.value.status_code == 429
         reset_ip_limiters()
 
-    def test_daily_upload_cap_trips(self) -> None:
-        reset_ip_limiters()
+    def test_daily_upload_cap_trips(self, tmp_path: Path) -> None:
+        db = DatabaseManager(db_path=tmp_path / "ip_uploads.db")
         ip = "198.51.100.10"
         for _ in range(MAX_DAILY_UPLOADS_PER_IP):
-            check_ip_daily_upload_limit(ip)
-            increment_ip_daily_uploads(ip)
+            check_ip_daily_upload_limit(db, ip)
+            increment_ip_daily_uploads(db, ip)
         with pytest.raises(HTTPException) as exc:
-            check_ip_daily_upload_limit(ip)
+            check_ip_daily_upload_limit(db, ip)
         assert exc.value.status_code == 429
         assert "upload" in exc.value.detail.lower()
-        reset_ip_limiters()
 
 
 class TestDailyJobCap:

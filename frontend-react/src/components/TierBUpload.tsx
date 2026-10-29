@@ -15,6 +15,7 @@ import { IngestProgress } from '../lib/ingestProgress';
 import { parserDisplay, readUsage } from '../lib/quota';
 import { previewUrlForDoc } from '../lib/uploadedFiles';
 import { DocViewerModal, DemoDocData } from './DocViewerModal';
+import { persistTermsAccepted, readTermsAccepted, TermsModal } from './TermsModal';
 import { TierCKeys } from './TierCKeys';
 
 function ParserBadge({ parser, degraded }: { parser: string; degraded?: boolean }) {
@@ -58,13 +59,8 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [termsAccepted, setTermsAccepted] = useState(() => {
-    try {
-      return sessionStorage.getItem('provenance_terms_v1') === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [termsAccepted, setTermsAccepted] = useState(() => readTermsAccepted());
+  const [termsOpen, setTermsOpen] = useState(false);
 
   // Optional BYOK State (activates TierCKeys within the upload workflow)
   const [useCustomKey, setUseCustomKey] = useState(false);
@@ -222,11 +218,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             onChange={(e) => {
               const next = e.target.checked;
               setTermsAccepted(next);
-              try {
-                sessionStorage.setItem('provenance_terms_v1', next ? '1' : '0');
-              } catch {
-                /* ignore quota / private mode */
-              }
+              persistTermsAccepted(next);
             }}
             className="size-3.5 mt-0.5 rounded border-border text-primary accent-primary cursor-pointer"
           />
@@ -234,9 +226,13 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             I have the right to upload this file. Text may be sent to the selected parser, Cohere,
             and the active LLM. The session is wiped on TTL or delete. Visitor keys transit the
             server in memory only.{' '}
-            <a href="/terms" target="_blank" rel="noreferrer" className="text-primary underline">
+            <button
+              type="button"
+              onClick={() => setTermsOpen(true)}
+              className="text-primary underline underline-offset-2"
+            >
               Full terms
-            </a>
+            </button>
           </span>
         </label>
 
@@ -392,6 +388,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
 
       {/* PDF Document Preview Popup Modal */}
       <DocViewerModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      <TermsModal
+        open={termsOpen}
+        onClose={() => setTermsOpen(false)}
+        onAccept={() => {
+          setTermsAccepted(true);
+          setTermsOpen(false);
+        }}
+      />
     </div>
   );
 };

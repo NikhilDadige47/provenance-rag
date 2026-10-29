@@ -24,6 +24,7 @@ from fastapi import (
     Header,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -238,7 +239,7 @@ async def upload_document(
     # 2. Rate limit + daily upload cap (before reading a large body)
     client_ip = client_ip_from_request(request)
     check_ip_rate_limit(client_ip)
-    check_ip_daily_upload_limit(client_ip)
+    check_ip_daily_upload_limit(db, client_ip)
 
     content_length = request.headers.get("content-length")
     if content_length:
@@ -306,7 +307,7 @@ async def upload_document(
         status="queued",
     )
 
-    increment_ip_daily_uploads(client_ip)
+    increment_ip_daily_uploads(db, client_ip)
 
     # 8. Fire background task with a strong reference so it cannot be GC'd
     runner.spawn_ingestion_pipeline(
@@ -472,6 +473,7 @@ async def delete_single_document(
 )
 async def delete_active_session(
     request: Request,
+    response: Response,
     session: SessionState = Depends(get_current_session),
 ) -> dict[str, Any]:
     """Hard wipe of all data associated with caller's session."""
@@ -481,6 +483,7 @@ async def delete_active_session(
         store = QdrantVectorStore(cfg=request.app.state.cfg)
 
     result = delete_session(session_id=session.session_id, db=db, store=store)
+    response.delete_cookie("session_token", path="/")
     return result
 
 

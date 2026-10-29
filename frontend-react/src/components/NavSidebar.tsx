@@ -19,6 +19,7 @@ interface NavSidebarProps {
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   isIngesting?: boolean;
+  onBrandClick?: () => void;
 }
 
 export const NavSidebar: React.FC<NavSidebarProps> = ({
@@ -27,6 +28,7 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
   isCollapsed: controlledCollapsed,
   onToggleCollapse,
   isIngesting = false,
+  onBrandClick,
 }) => {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -69,7 +71,12 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
         }`}
       >
         {!isCollapsed && (
-          <div className="flex items-center gap-0.5 overflow-hidden">
+          <button
+            type="button"
+            onClick={onBrandClick}
+            className="flex items-center gap-0.5 overflow-hidden text-left rounded-md hover:opacity-90 transition-opacity"
+            title="Back to overview"
+          >
             <img
               src={logoImg}
               alt="Provenance RAG"
@@ -83,16 +90,17 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
                 Provenance RAG
               </span>
             </div>
-          </div>
+          </button>
         )}
 
         {isCollapsed && (
-          <img
-            src={logoImg}
-            alt="Provenance RAG"
-            className="size-12 rounded-lg object-contain shrink-0"
-            title="Provenance RAG v2.1"
-          />
+          <button type="button" onClick={onBrandClick} title="Back to overview">
+            <img
+              src={logoImg}
+              alt="Provenance RAG"
+              className="size-12 rounded-lg object-contain shrink-0"
+            />
+          </button>
         )}
       </div>
 
