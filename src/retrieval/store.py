@@ -51,9 +51,9 @@ class QdrantVectorStore(IVectorStore):
             self._client = client
         else:
             config = cfg or OwnerConfig.from_env()
-            if config.qdrant_url == ":memory:":
+            if not config.qdrant_url or config.qdrant_url == ":memory:":
                 self._client = QdrantClient(":memory:")
-            elif config.qdrant_url:
+            else:
                 try:
                     api_key_str = config.qdrant_api_key.reveal() if config.qdrant_api_key else None
                     remote_client = QdrantClient(
@@ -65,11 +65,9 @@ class QdrantVectorStore(IVectorStore):
                 except Exception as exc:
                     logger.warning(
                         f"Could not connect to Qdrant at {config.qdrant_url} ({exc}). "
-                        "Falling back to local embedded Qdrant (./qdrant_storage)."
+                        "Falling back to in-memory Qdrant."
                     )
-                    self._client = QdrantClient(path="./qdrant_storage")
-            else:
-                self._client = QdrantClient(path="./qdrant_storage")
+                    self._client = QdrantClient(":memory:")
 
         self.ensure_collection()
 
