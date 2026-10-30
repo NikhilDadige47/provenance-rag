@@ -16,6 +16,7 @@ export interface ChatMessage {
   timings_ms?: Record<string, number>;
   sources?: SourceCard[];
   is_found?: boolean;
+  isError?: boolean;
   is_grounded?: boolean;
   rerank_fallback?: boolean;
   used_visitor_key?: boolean;

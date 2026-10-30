@@ -126,7 +126,10 @@ def open_sql_connection(db_path: str, *, timeout: float = 30.0, wal: bool = True
                 "TURSO_DATABASE_URL is set but the libsql package is missing. "
                 "Install it with: pip install libsql"
             ) from exc
-        conn = libsql.connect(database=url, auth_token=token or None)
+        connect_kwargs: dict[str, Any] = {"database": url}
+        if token:
+            connect_kwargs["auth_token"] = token
+        conn = libsql.connect(**connect_kwargs)
         return _MappingConnection(conn)
 
     conn = sqlite3.connect(db_path, timeout=timeout)

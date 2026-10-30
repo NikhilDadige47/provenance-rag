@@ -160,6 +160,10 @@ def check_and_increment_ip_owner_questions(
             """,
             (ip_hash, today),
         )
+        # changes(), not cursor.rowcount. libsql/Turso's rowcount is a running
+        # total for the connection, so INSERT + UPDATE reports 2 and a
+        # `rowcount != 1` check rejects the visitor's first question.
+        # RETURNING also leaves the statement open and commit then fails.
         cursor.execute(
             """
             UPDATE ip_usage_daily
@@ -168,7 +172,9 @@ def check_and_increment_ip_owner_questions(
             """,
             (ip_hash, today, cap),
         )
-        if cursor.rowcount != 1:
+        changed = cursor.execute("SELECT changes()").fetchone()
+        applied = int(changed[0] if changed is not None else 0)
+        if applied != 1:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(

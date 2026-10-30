@@ -227,6 +227,24 @@ class TestIPDailyQuestionCap:
             check_and_increment_ip_owner_questions(tmp_db, "127.0.0.1", cfg)
             check_and_increment_ip_owner_questions(tmp_db, "::1", cfg)
 
+    def test_first_question_allowed_when_driver_rowcount_is_cumulative(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Turso/libsql rowcount is a connection total, not the last statement.
+
+        INSERT then UPDATE used to look like 2 rows changed, so the first
+        owner-funded question was rejected as if all 15 were already used.
+        """
+        db_file = tmp_path / "libsql_quota.db"
+        monkeypatch.setenv("TURSO_DATABASE_URL", str(db_file))
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "")
+        libsql_db = DatabaseManager(db_path=db_file)
+        cfg = OwnerConfig(app_env="production", session_max_questions_owner_llm=15)
+        used = check_and_increment_ip_owner_questions(libsql_db, "203.0.113.77", cfg)
+        assert used == 1
+        used = check_and_increment_ip_owner_questions(libsql_db, "203.0.113.77", cfg)
+        assert used == 2
+
     def test_production_loopback_stays_capped(self, tmp_db: DatabaseManager) -> None:
         cfg = OwnerConfig(app_env="production", session_max_questions_owner_llm=1)
         check_and_increment_ip_owner_questions(tmp_db, "127.0.0.1", cfg)

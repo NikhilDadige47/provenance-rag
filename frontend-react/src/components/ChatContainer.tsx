@@ -247,6 +247,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           role: 'assistant',
           content: `Error: ${err.message || 'An error occurred during retrieval/generation.'}`,
           timestamp: 'Just now',
+          isError: true,
         },
       ]);
     } finally {
@@ -424,7 +425,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             ) : (
               /* Assistant Stream - Sticks directly to the chat canvas with NO enclosing container */
               <div className="flex flex-col items-start w-full space-y-3 py-2">
-                {/* AI Reasoning Trace: Direct borderless elements with Copilot logo and progressive reveal */}
+                {/* Errors are rejected before retrieval, so they have no pipeline trace. */}
+                {!msg.isError && (
                 <AIReasoningTrace
                   isLoading={false}
                   timings_ms={msg.timings_ms}
@@ -436,16 +438,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                   scope={scope}
                   defaultExpanded={false}
                 />
+                )}
 
                 {/* Fallback & Not-Found Notices */}
-                {msg.rerank_fallback && (
+                {!msg.isError && msg.rerank_fallback && (
                   <div className="p-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs flex items-center gap-2">
                     <AlertTriangle className="size-3.5 shrink-0" />
                     <span>Cohere Rerank circuit breaker active — sorted via hybrid search order</span>
                   </div>
                 )}
 
-                {!msg.is_found && (
+                {!msg.isError && msg.is_found === false && (
                   <div className="p-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs flex items-center gap-2">
                     <Shield className="size-3.5 shrink-0" />
                     <span>Not-Found Gate: Query out-of-domain (score below threshold)</span>
