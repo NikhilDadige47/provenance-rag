@@ -50,6 +50,7 @@ class TestParentScopeIsolation:
         doc_id: str = "doc_001",
     ) -> None:
         now = datetime.now(UTC).isoformat()
+        db.create_or_get_session(session_id)
         with db._get_connection() as conn:
             # Insert doc first (FK)
             conn.execute(

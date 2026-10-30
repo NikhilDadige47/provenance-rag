@@ -1,6 +1,6 @@
 # Provenance RAG: Phase 7 Benchmark Evaluation Report
 
-**Date:** 2026-10-28 15:30:36 UTC  
+**Date:** 2026-10-30 07:02:15 UTC  
 **Total Benchmark Queries:** 50  
 
 ## 🎯 Retrieval & Ranking Performance
@@ -21,8 +21,8 @@
 
 ## ⚡ Performance, Latency & Spend
 
-* **Median Latency (p50):** `2.5 ms`
-* **95th Percentile Latency (p95):** `4.5 ms`
+* **Median Latency (p50):** `341.8 ms`
+* **95th Percentile Latency (p95):** `462.8 ms`
 * **Cohere API Calls:** 0 Embed + 0 Rerank
 * **Total Tokens Generated:** 2496
 * **Total Test Cost:** `$0.0002 USD`

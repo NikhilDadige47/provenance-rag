@@ -57,7 +57,7 @@ from src.security.errors import (
 )
 from src.security.ledger import Ledger
 from src.security.secret import Secret
-from src.storage.db import DatabaseManager
+from src.storage.db import DatabaseManager, resolve_default_db_path
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -80,7 +80,9 @@ logger = logging.getLogger("provenance_rag.api.main")
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     """Initialize shared resources on startup; clean up on shutdown."""
     cfg = OwnerConfig.from_env()
-    db = DatabaseManager()  # creates SQLite tables if absent
+    db = DatabaseManager(
+        db_path=resolve_default_db_path(data_dir=cfg.data_dir, sqlite_path=cfg.sqlite_path)
+    )
     ledger = Ledger(db.db_path)
     store = QdrantVectorStore(cfg=cfg)
     job_runner = JobRunner(db=db, store=store, cfg=cfg)
@@ -91,12 +93,20 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     app.state.store = store
     app.state.job_runner = job_runner
 
+    try:
+        interrupted = job_runner.fail_interrupted_jobs()
+    except Exception:
+        logger.exception("Could not mark interrupted ingest jobs failed")
+        interrupted = 0
+
     logger.info(
         f"Provenance RAG API starting up. "
         f"env={cfg.app_env} "
         f"kill_switch_owner_llm={cfg.kill_switch_disable_owner_llm} "
         f"kill_switch_uploads={cfg.kill_switch_disable_uploads}"
     )
+    if interrupted:
+        logger.warning("Marked %s interrupted ingest job(s) failed after restart", interrupted)
 
     ttl_task = asyncio.create_task(run_ttl_cleanup_loop(db=db, store=store, interval_seconds=300))
 
@@ -361,8 +371,8 @@ class HealthResponse(BaseModel):
     components: dict[str, str] = Field(default_factory=dict)
 
 
-@app.get("/health", response_model=HealthResponse, tags=["system"])
-async def health_check(request: Request) -> HealthResponse:
+@app.get("/health", response_model=None, tags=["system"])
+async def health_check(request: Request) -> HealthResponse | JSONResponse:
     """Liveness + readiness probe for load balancers and uptime monitors."""
     components: dict[str, str] = {}
     ready = True
@@ -388,12 +398,20 @@ async def health_check(request: Request) -> HealthResponse:
     except Exception:
         components["qdrant"] = "error"
         ready = False
-    return HealthResponse(
+    payload = HealthResponse(
         status="ok",
         version="1.0.0",
         ready=ready,
         components=components,
     )
+    cfg: OwnerConfig | None = getattr(request.app.state, "cfg", None)
+    production = cfg is not None and (cfg.app_env or "").lower() == "production"
+    if not ready and production:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=payload.model_dump(),
+        )
+    return payload
 
 
 @app.get("/metrics", tags=["system"])

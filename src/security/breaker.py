@@ -8,10 +8,11 @@ Implements §7.1 and §12 of token-engineering-guide.md:
 from __future__ import annotations
 
 import logging
-import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+
+from src.storage.sql import open_sql_connection
 
 logger = logging.getLogger("provenance_rag.security.breaker")
 
@@ -24,10 +25,8 @@ class Breaker:
         self._lock = threading.Lock()
         self._init_table()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _get_connection(self):
+        return open_sql_connection(self.db_path, timeout=10.0, wal=False)
 
     def _init_table(self) -> None:
         with self._lock, self._get_connection() as conn:

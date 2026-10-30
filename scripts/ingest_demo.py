@@ -9,7 +9,6 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 # Ensure project root is in sys.path when script is executed directly
@@ -79,31 +78,22 @@ async def ingest_demo_document(
         f"Generated {len(chunk_res.parents)} parents and {len(chunk_res.children)} children for {doc.title}."
     )
 
-    # 4. Store parents and document in SQL under scope = 'demo'
+    # 4. Store document then parents (parents.doc_id REFERENCES documents)
+    db.create_or_get_session("demo", tier="tier_a_demo")
+    db.insert_document(
+        doc_id=doc.doc_id,
+        session_id="demo",
+        title=doc.title,
+        content_hash=(
+            chunk_res.children[0].content_hash if chunk_res.children else "demo_hash"
+        ),
+        page_count=doc.page_count,
+        parser_used=active_parser.name,
+        parser_version=doc.parser_version,
+        chunking_version=chunk_res.chunking_version,
+        filename=pdf_path.name,
+    )
     db.insert_parents(chunk_res.parents, session_id="demo")
-    with db._get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO documents (
-                doc_id, session_id, title, content_hash, page_count, parser_used, parser_version,
-                chunking_version, embedding_version, ingested_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                doc.doc_id,
-                "demo",
-                doc.title,
-                chunk_res.children[0].content_hash if chunk_res.children else "demo_hash",
-                doc.page_count,
-                active_parser.name,
-                doc.parser_version,
-                chunk_res.chunking_version,
-                "emb-v1",
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-        conn.commit()
 
     # 5. Compute sparse vectors locally ($0 cost)
     texts_to_embed = [c.embedding_text for c in chunk_res.children]
@@ -168,7 +158,7 @@ async def main() -> None:
 
     chunker = HybridChunker()
     sparse_vectorizer = LocalSparseVectorizer()
-    store = QdrantVectorStore()
+    store = QdrantVectorStore(cfg=cfg)
     db = DatabaseManager()
 
     try:
@@ -187,8 +177,9 @@ async def main() -> None:
     except Exception:
         embedder = None
 
-    if args.require_embeddings and embedder is None:
-        logger.error("Cohere Embed is required (--require-embeddings) but is not configured.")
+    production = (cfg.app_env or "").lower() == "production"
+    if (args.require_embeddings or production) and embedder is None:
+        logger.error("Cohere Embed is required for demo ingest but is not configured.")
         raise SystemExit(1)
 
     pdf_files = list_demo_pdfs()

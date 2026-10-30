@@ -51,7 +51,7 @@ from src.generation.prompt import build_generation_prompt, validate_question
 from src.generation.rewrite import rewrite_query_if_needed
 from src.retrieval.expansion import ContextExpander
 from src.retrieval.search import HybridSearchPipeline
-from src.security.config import OwnerConfig
+from src.security.config import OwnerConfig, dev_loopback_unlimited
 from src.security.errors import InvalidKeyError, QuotaExhaustedError
 from src.security.ledger import Ledger
 from src.security.secret import Secret
@@ -331,11 +331,15 @@ async def get_usage(
     q_own_max = cfg.session_max_questions_own_llm
     rerank_max = cfg.session_max_rerank_calls
     client_ip = client_ip_from_request(request)
-    ip_owner_used = get_ip_daily_owner_questions(db, client_ip)
-    q_owner_used = max(session_owner_used, ip_owner_used)
-    owner_remaining = max(0, q_owner_max - q_owner_used)
-    own_remaining = max(0, q_own_max - q_own_used)
-    at_capacity = owner_remaining == 0 and own_remaining == 0
+    unlimited = dev_loopback_unlimited(cfg, client_ip)
+    ip_owner_used = get_ip_daily_owner_questions(db, client_ip, cfg)
+    q_owner_used = 0 if unlimited else max(session_owner_used, ip_owner_used)
+    owner_remaining = q_owner_max if unlimited else max(0, q_owner_max - q_owner_used)
+    own_remaining = q_own_max if unlimited else max(0, q_own_max - q_own_used)
+    at_capacity = False if unlimited else owner_remaining == 0 and own_remaining == 0
+    docs_max = max(cfg.session_max_documents, docs_used + 1) if unlimited else cfg.session_max_documents
+    pages_max = max(cfg.session_max_total_pages, pages_used + 500) if unlimited else cfg.session_max_total_pages
+    rerank_max_out = max(rerank_max, rerank_used + 1) if unlimited else rerank_max
 
     expires_at = session.expires_at or row_dict.get("expires_at") or ""
     ttl_seconds = 0
@@ -356,15 +360,15 @@ async def get_usage(
         questions_own_llm_max=q_own_max,
         questions_own_llm_remaining=own_remaining,
         rerank_calls_used=rerank_used,
-        rerank_calls_max=rerank_max,
+        rerank_calls_max=rerank_max_out,
         at_capacity=at_capacity,
-        owner_questions_exhausted=owner_remaining == 0,
+        owner_questions_exhausted=False if unlimited else owner_remaining == 0,
         session_expires_at=expires_at,
         session_ttl_seconds=ttl_seconds,
         session_docs_used=docs_used,
-        session_docs_max=cfg.session_max_documents,
+        session_docs_max=docs_max,
         session_pages_used=pages_used,
-        session_pages_max=cfg.session_max_total_pages,
+        session_pages_max=pages_max,
         daily_questions_per_ip_max=q_owner_max,
         requests_per_minute_max=MAX_REQUESTS_PER_WINDOW,
         owner_llm_provider=cfg.default_llm_provider,
@@ -439,13 +443,15 @@ async def chat(
 
     # ── Gate 3: Per-IP daily owner-question cap (survives refresh / private tab)
     client_ip = client_ip_from_request(request)
+    unlimited = dev_loopback_unlimited(cfg, client_ip)
 
     # ── Gate 4: Question caps (increment BEFORE the pipeline) ───
-    if using_visitor_key:
-        check_and_increment_session_byok_llm(db, session.session_id, cfg)
-    else:
-        check_and_increment_ip_owner_questions(db, client_ip, cfg)
-        check_and_increment_session_owner_llm(db, session.session_id, cfg)
+    if not unlimited:
+        if using_visitor_key:
+            check_and_increment_session_byok_llm(db, session.session_id, cfg)
+        else:
+            check_and_increment_ip_owner_questions(db, client_ip, cfg)
+            check_and_increment_session_owner_llm(db, session.session_id, cfg)
 
     # ── Resolve LLM adapter ────────────────────────────────────────────────
     llm_secret: Secret | None = None
@@ -471,7 +477,7 @@ async def chat(
     t0 = time.time()
     rewrite_buckets = []
     try:
-        if history_dicts and not using_visitor_key:
+        if history_dicts and not using_visitor_key and not unlimited:
             rewrite_est = estimate_rewrite_reserve(body.question, history_dicts)
             rewrite_buckets = await reserve_owner_llm_tokens(
                 ledger, session.session_id, client_ip, rewrite_est, cfg
@@ -522,7 +528,8 @@ async def chat(
     timings["retrieval_ms"] = round((time.time() - t0) * 1000, 1)
 
     # ── Gate 5: Daily rerank cap ────────────────────────────────────────────
-    check_and_increment_daily_rerank(db, cfg)
+    if not unlimited:
+        check_and_increment_daily_rerank(db, cfg)
 
     # ── Gate 6: Not-found gate (before any LLM call → saves tokens) ────────
     if not search_result.is_found:
@@ -571,7 +578,7 @@ async def chat(
     tokens_used = 0
 
     try:
-        if not using_visitor_key:
+        if not using_visitor_key and not unlimited:
             gen_est = estimate_generation_reserve(user_prompt)
             gen_buckets = await reserve_owner_llm_tokens(
                 ledger, session.session_id, client_ip, gen_est, cfg

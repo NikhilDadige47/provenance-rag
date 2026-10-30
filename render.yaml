@@ -1,0 +1,56 @@
+# Render Blueprint: one web service serves FastAPI + the built React SPA.
+# Create the service from this file, then set the sync:false env vars in the
+# dashboard. Attach the disk so SQLite (sessions, IP quota, jobs) survives
+# deploys. Point QDRANT_URL at Qdrant Cloud — do not run Qdrant inside this box.
+#
+# FRONTEND_ORIGIN must be this service's public https URL so cookies and CORS
+# stay same-origin.
+
+services:
+  - type: web
+    name: provenance-rag
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: false
+    disk:
+      name: provenance-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: provenance_rag_v1
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false
+      - key: DEFAULT_LLM_PROVIDER
+        value: groq
+      - key: DEFAULT_LLM_API_KEY
+        sync: false
+      - key: DEFAULT_LLM_MODEL
+        sync: false
+      - key: LANDINGAI_API_KEY
+        sync: false
+      - key: LLAMAPARSE_API_KEY
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_HOST
+        value: https://cloud.langfuse.com

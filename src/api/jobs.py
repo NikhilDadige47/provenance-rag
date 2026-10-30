@@ -490,6 +490,19 @@ class JobRunner:
         content_hash: str,
     ) -> None:
         """Blocking Qdrant upsert + SQLite writes. Always run via asyncio.to_thread."""
+        # Document row first: parents.doc_id REFERENCES documents(doc_id).
+        # Turso/libSQL enforces FKs (local SQLite often does not).
+        self.db.insert_document(
+            doc_id=doc_id,
+            session_id=session_id,
+            title=structured_doc.title or filename,
+            content_hash=content_hash,
+            page_count=structured_doc.page_count,
+            parser_used=parser_used,
+            parser_version="1.0",
+            quality_flags=quality_flags_str,
+            filename=filename,
+        )
         self.db.insert_parents(parents=parents, session_id=session_id)
         self.store.upsert(
             chunks=children,
@@ -502,17 +515,6 @@ class JobRunner:
                 "parser_version": "1.0",
                 "page_count": structured_doc.page_count,
             },
-        )
-        self.db.insert_document(
-            doc_id=doc_id,
-            session_id=session_id,
-            title=structured_doc.title or filename,
-            content_hash=content_hash,
-            page_count=structured_doc.page_count,
-            parser_used=parser_used,
-            parser_version="1.0",
-            quality_flags=quality_flags_str,
-            filename=filename,
         )
         self.db.record_document_ingestion(
             session_id=session_id,
@@ -561,6 +563,21 @@ class JobRunner:
     def can_accept_job(self) -> bool:
         """Reject new uploads once running + queued ingest tasks fill the buffer."""
         return self.inflight_count < (self._max_concurrency + self._max_queued)
+
+    def fail_interrupted_jobs(self) -> int:
+        """Mark in-flight jobs failed after a process restart (P10-T3)."""
+        jobs = self.db.list_incomplete_jobs()
+        for job in jobs:
+            job_id = str(job.get("job_id") or "")
+            session_id = str(job.get("session_id") or "")
+            if not job_id or not session_id:
+                continue
+            self._mark_job_failed(
+                job_id,
+                session_id,
+                "Ingestion was interrupted by a restart. Partial index data was removed. Please retry.",
+            )
+        return len(jobs)
 
     def _format_error(self, exc: Exception) -> str:
         """Format friendly error messages without leaking provider keys or internals."""

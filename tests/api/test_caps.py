@@ -181,6 +181,15 @@ class TestIPRateLimit:
         self._clear_ip(ip1)
         self._clear_ip(ip2)
 
+    def test_dev_loopback_skips_rate_limit(self) -> None:
+        from src.security.config import OwnerConfig
+
+        cfg = OwnerConfig(app_env="development")
+        self._clear_ip("127.0.0.1")
+        for _ in range(MAX_REQUESTS_PER_WINDOW + 5):
+            check_ip_rate_limit("127.0.0.1", cfg)
+        self._clear_ip("127.0.0.1")
+
 
 # ---------------------------------------------------------------------------
 # Per-IP daily question cap
@@ -206,10 +215,23 @@ class TestIPDailyQuestionCap:
         assert exc_info.value.status_code == 429
 
     def test_loopback_aliases_share_budget(self, tmp_db: DatabaseManager) -> None:
-        cfg = OwnerConfig(session_max_questions_owner_llm=1)
+        cfg = OwnerConfig(app_env="production", session_max_questions_owner_llm=1)
         check_and_increment_ip_owner_questions(tmp_db, "127.0.0.1", cfg)
         with pytest.raises(HTTPException) as exc_info:
             check_and_increment_ip_owner_questions(tmp_db, "::1", cfg)
+        assert exc_info.value.status_code == 429
+
+    def test_dev_loopback_skips_question_cap(self, tmp_db: DatabaseManager) -> None:
+        cfg = OwnerConfig(app_env="development", session_max_questions_owner_llm=1)
+        for _ in range(5):
+            check_and_increment_ip_owner_questions(tmp_db, "127.0.0.1", cfg)
+            check_and_increment_ip_owner_questions(tmp_db, "::1", cfg)
+
+    def test_production_loopback_stays_capped(self, tmp_db: DatabaseManager) -> None:
+        cfg = OwnerConfig(app_env="production", session_max_questions_owner_llm=1)
+        check_and_increment_ip_owner_questions(tmp_db, "127.0.0.1", cfg)
+        with pytest.raises(HTTPException) as exc_info:
+            check_and_increment_ip_owner_questions(tmp_db, "127.0.0.1", cfg)
         assert exc_info.value.status_code == 429
 
 

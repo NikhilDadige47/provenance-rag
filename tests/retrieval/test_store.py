@@ -1,10 +1,12 @@
 """Unit tests for Qdrant vector store and scope isolation."""
 
+import pytest
 from qdrant_client import QdrantClient
 
 from src.ingest.chunking.models import ChildChunk
 from src.retrieval.sparse import SparseVector
 from src.retrieval.store import QdrantVectorStore
+from src.security.config import OwnerConfig
 
 
 def test_qdrant_store_scope_isolation():
@@ -173,3 +175,27 @@ def test_embedding_version_mismatch_raises():
             sparse_query=None,
             scope="session_v",
         )
+
+
+def test_production_qdrant_memory_url_is_rejected():
+    cfg = OwnerConfig(app_env="production", qdrant_url=":memory:")
+    with pytest.raises(RuntimeError, match="required in production"):
+        QdrantVectorStore(cfg=cfg)
+
+
+def test_production_qdrant_does_not_fallback_to_memory(monkeypatch: pytest.MonkeyPatch):
+    class Boom:
+        def __init__(self, *args, **kwargs) -> None:
+            raise OSError("refused")
+
+    monkeypatch.setattr("src.retrieval.store.QdrantClient", Boom)
+    cfg = OwnerConfig(app_env="production", qdrant_url="http://127.0.0.1:6333")
+    with pytest.raises(RuntimeError, match="required in production"):
+        QdrantVectorStore(cfg=cfg)
+
+
+def test_store_uses_configured_collection_name():
+    client = QdrantClient(location=":memory:")
+    cfg = OwnerConfig(qdrant_url=":memory:", qdrant_collection="prod_collection")
+    store = QdrantVectorStore(client=client, cfg=cfg)
+    assert store.collection_name == "prod_collection"

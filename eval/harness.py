@@ -79,6 +79,20 @@ def build_index_bundle(
     simple_index = LocalEvalIndex.build(simple_results, embedder=embedder)
     semantic_index = LocalEvalIndex.build(semantic_results, embedder=embedder)
 
+    parents = simple_index.parents + semantic_index.parents
+    seen_docs: set[str] = set()
+    for parent in parents:
+        if parent.doc_id in seen_docs:
+            continue
+        seen_docs.add(parent.doc_id)
+        database.insert_document(
+            parent.doc_id,
+            "demo",
+            title=parent.breadcrumb.split(">")[0].strip() or parent.doc_id,
+            content_hash=parent.doc_id,
+            page_count=max(1, parent.page_end),
+            parser_used="eval",
+        )
     database.insert_parents(simple_index.parents, session_id="demo")
     database.insert_parents(semantic_index.parents, session_id="demo")
 

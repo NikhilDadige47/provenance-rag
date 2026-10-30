@@ -1,0 +1,39 @@
+# Local one-box stack: API + SPA on :8000, Qdrant on :6333.
+# Copy .env.example to .env first. Do not commit .env.
+#
+#   docker compose up --build
+#   python scripts/ingest_demo.py --require-embeddings
+#   python scripts/smoke_prod.py http://127.0.0.1:8000
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+      DATA_DIR: /data
+      QDRANT_URL: http://qdrant:6333
+      FRONTEND_ORIGIN: http://localhost:8000
+      CORS_ORIGINS: http://localhost:8000
+    volumes:
+      - api_data:/data
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  api_data:

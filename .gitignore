@@ -54,4 +54,6 @@ scratch/
 qdrant_storage/
 *.sqlite3
 *.db
+*.db-wal
+*.db-shm
 logs/

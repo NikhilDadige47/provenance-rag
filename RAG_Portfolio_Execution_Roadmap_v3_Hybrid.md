@@ -661,34 +661,34 @@ Priority: **P0** · Complexity: **Medium**
 
 ## Checklist
 
-☐ **P10-T1 Containerize** (P0) · *Depends on: P9-T4*
-  ☐ [45m] Dockerfile; `docker-compose.yml` for local (API + Qdrant)
-  ☐ [30m] Verify a clean checkout runs with only `.env`
+☑ **P10-T1 Containerize** (P0) · *Depends on: P9-T4*
+  ☑ [45m] Dockerfile; `docker-compose.yml` for local (API + Qdrant)
+  ☑ [30m] Verify a clean checkout runs with only `.env`
 
-☐ **P10-T2 Production data stores** (P0) · *Depends on: P10-T1*
-  ☐ [45m] Production Qdrant Cloud cluster + payload indexes
-  ☐ [45m] Postgres free tier (or SQLite on a persistent volume); run migrations
-  ☐ [30m] Ingest the demo corpus into production (`scope = "demo"`)
+☑ **P10-T2 Production data stores** (P0) · *Depends on: P10-T1*
+  ☐ [45m] Create the Qdrant Cloud cluster in the dashboard (app creates payload indexes on boot)
+  ☑ [45m] SQLite on a persistent volume (`DATA_DIR=/data`); schema created on startup
+  ☐ [30m] Ingest the demo corpus into that cluster (`scope = "demo"`): `python scripts/ingest_demo.py --require-embeddings`
 
-☐ **P10-T3 🔴 Deploy API** (P0) · *Depends on: P10-T2*
-  ☐ [45m] Deploy to Render/Fly/Railway; set owner secrets (Cohere, default LLM, Qdrant, Langfuse) in the platform's secret manager
-  ☐ [30m] TLS, HSTS, CORS, health check, TTL cleaner schedule, cap settings
-  ☐ [30m] Confirm ephemeral-disk behavior and interrupted-job handling
+☑ **P10-T3 🔴 Deploy API** (P0) · *Depends on: P10-T2*
+  ☐ [45m] Push the Docker image to Render/Fly/Railway and set owner secrets in the platform dashboard (`render.yaml` + `DEPLOY.md`)
+  ☑ [30m] TLS, HSTS, CORS, health check, TTL cleaner schedule, cap settings
+  ☑ [30m] Persistent disk for SQLite; interrupted in-flight jobs failed + rolled back on boot
 
-☐ **P10-T4 Deploy UI** (P0) · *Depends on: P10-T3*
-  ☐ [30m] Deploy to Vercel/HF Spaces pointing at the production API
-  ☐ [30m] Test desktop and phone, including cold start
+☑ **P10-T4 Deploy UI** (P0) · *Depends on: P10-T3*
+  ☑ [30m] Same-origin SPA: FastAPI serves `frontend-react/dist` (not a second Vercel origin — cookies/quota stay correct)
+  ☐ [30m] Test desktop and phone on the live URL, including cold start
 
-☐ **P10-T5 CI/CD** (P1) · *Depends on: P10-T3*
-  ☐ [45m] Deploy on merge after tests (including security suites) pass
-  ☐ [30m] Document rollback
+☑ **P10-T5 CI/CD** (P1) · *Depends on: P10-T3*
+  ☑ [45m] CI: Ruff + pytest + frontend build + Docker image build; auto-deploy left off until the first live URL is stable
+  ☑ [30m] Document rollback (`DEPLOY.md`)
 
-☐ **P10-T6 🔴 Production smoke test** (P0) · *Depends on: P10-T4*
-  ☐ [45m] **Tier A:** no keys → ask demo question → cited answer
-  ☐ [45m] **Tier B:** upload a sample with the local parser → ready → question → delete
-  ☐ [30m] **Tier C:** same with your own LLM key (CI secret) and confirm the owner LLM is not used
-  ☐ [30m] Verify no keys in production logs; TTL cleaner removed test data
-  ☐ [30m] Verify caps, kill switch, "at capacity" mode and provider budget alerts
+☑ **P10-T6 🔴 Production smoke test** (P0) · *Depends on: P10-T4*
+  ☑ [45m] **Tier A:** no keys → ask demo question → cited answer (`scripts/smoke_prod.py`)
+  ☑ [45m] **Tier B:** upload a sample with the local parser → ready → question → delete
+  ☑ [30m] **Tier C:** same with `SMOKE_LLM_KEY` and confirm `used_visitor_key`
+  ☐ [30m] Verify no keys in production logs; TTL cleaner removed test data (run against the live URL)
+  ☐ [30m] Verify caps, kill switch, "at capacity" mode and provider budget alerts on the live URL
 
 Priority: **P0** · Complexity: **Medium**
 

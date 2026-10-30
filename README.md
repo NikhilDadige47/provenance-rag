@@ -1152,7 +1152,18 @@ python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
 * **Interactive Swagger UI:** Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 * **OpenAPI ReDoc:** Open [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc).
 
-### 6. Interactive CLI Q&A
+### 6. Production deploy (one public URL)
+FastAPI serves the API and the built React app together. Qdrant Cloud holds vectors; SQLite lives on a persistent disk at `/data`. Do not split the UI onto a second host.
+
+```powershell
+docker compose up --build
+python scripts/ingest_demo.py --require-embeddings
+python scripts/smoke_prod.py http://127.0.0.1:8000
+```
+
+Render/Fly/Railway: use the `Dockerfile`, set owner secrets in the platform dashboard, attach a disk at `/data`, set `FRONTEND_ORIGIN` to that service's https URL, then follow [DEPLOY.md](DEPLOY.md).
+
+### 7. Interactive CLI Q&A
 ```powershell
 # Ask questions over the demo corpus
 python -m src.cli ask "What is Acme Corporation's debt-to-equity ratio?"
@@ -1249,6 +1260,11 @@ python -m src.cli ask "What is Acme Corporation's debt-to-equity ratio?" --disab
   - [x] Production CORS/HSTS/CSP, HTTPS-only, HttpOnly session cookie, `/health` readiness, `/metrics` (no content), `/terms`
   - [x] First-upload terms checkbox (UI + API gate)
   - [x] `scripts/health_check.py` uptime probe and `scripts/audit_deps.py` (pip-audit / npm audit)
-- [ ] *Up Next:* **Phase 10: Production Deployment & Smoke Tests**
+- [x] **Phase 10: Production Deployment & Smoke Tests**
+  - [x] Multi-stage `Dockerfile` + `docker-compose.yml` (API + SPA + Qdrant)
+  - [x] SQLite on `DATA_DIR` / persistent volume; production Qdrant refuses in-memory fallback
+  - [x] Interrupted in-flight jobs marked failed on boot; `/health` 503 in production if SQLite or Qdrant is down
+  - [x] `render.yaml`, [DEPLOY.md](DEPLOY.md) rollback notes, CI image build
+  - [x] `scripts/smoke_prod.py` for Tiers A / B / C against one public origin
 - [ ] *Up Next:* **Phase 11: Demo Video, Results & Launch**
 

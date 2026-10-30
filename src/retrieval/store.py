@@ -42,16 +42,31 @@ class QdrantVectorStore(IVectorStore):
     def __init__(
         self,
         client: QdrantClient | None = None,
-        collection_name: str = DEFAULT_COLLECTION_NAME,
+        collection_name: str | None = None,
         cfg: OwnerConfig | None = None,
     ) -> None:
-        self.collection_name = collection_name
+        config = cfg
+        if client is None and config is None:
+            config = OwnerConfig.from_env()
+
+        if collection_name:
+            self.collection_name = collection_name
+        elif config is not None:
+            self.collection_name = config.qdrant_collection or DEFAULT_COLLECTION_NAME
+        else:
+            self.collection_name = DEFAULT_COLLECTION_NAME
 
         if client is not None:
             self._client = client
         else:
-            config = cfg or OwnerConfig.from_env()
-            if not config.qdrant_url or config.qdrant_url == ":memory:":
+            assert config is not None
+            url = (config.qdrant_url or "").strip()
+            production = (config.app_env or "").lower() == "production"
+            if not url or url == ":memory:":
+                if production:
+                    raise RuntimeError(
+                        "Qdrant is required in production. Set QDRANT_URL to a reachable cluster."
+                    )
                 self._client = QdrantClient(":memory:")
             else:
                 try:
@@ -63,6 +78,11 @@ class QdrantVectorStore(IVectorStore):
                     remote_client.get_collections()
                     self._client = remote_client
                 except Exception as exc:
+                    if production:
+                        raise RuntimeError(
+                            "Qdrant is required in production and the configured cluster "
+                            "is unreachable."
+                        ) from exc
                     logger.warning(
                         f"Could not connect to Qdrant at {config.qdrant_url} ({exc}). "
                         "Falling back to in-memory Qdrant."

@@ -120,6 +120,18 @@ class TestOwnerQuestionCapBlocksPaidPath:
         assert body["questions_owner_llm_remaining"] == 0
         assert body["owner_questions_exhausted"] is True
 
+    def test_dev_loopback_client_is_not_question_capped(self, isolated_app) -> None:
+        _client, _db, cfg = isolated_app
+        cfg.app_env = "development"
+        loop = TestClient(app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
+        headers = _session(loop)
+        with patch("src.api.chat.HybridSearchPipeline.search", new=AsyncMock(side_effect=_empty_search)):
+            for _ in range(cfg.session_max_questions_owner_llm + 2):
+                resp = loop.post(
+                    "/chat", json={"question": "What is net sales?", "history": []}, headers=headers
+                )
+                assert resp.status_code == 200
+
     def test_spoofed_forwarded_for_does_not_reset_dev_budget(self, isolated_app) -> None:
         client, _db, cfg = isolated_app
         headers = _session(client)

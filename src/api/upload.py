@@ -56,7 +56,7 @@ from src.ingest.parsers.selection import (
     visitor_parser_key_required,
 )
 from src.retrieval.store import QdrantVectorStore
-from src.security.config import OwnerConfig
+from src.security.config import OwnerConfig, dev_loopback_unlimited
 from src.security.secret import Secret
 from src.storage.db import DatabaseManager
 
@@ -159,6 +159,7 @@ async def validate_and_estimate_upload(
     # Read uploaded file bytes in memory
     file_bytes = await file.read()
 
+    unlimited = dev_loopback_unlimited(cfg, client_ip_from_request(request))
     # Validate PDF
     validation = validate_pdf_upload(
         filename=file.filename or "document.pdf",
@@ -166,6 +167,7 @@ async def validate_and_estimate_upload(
         session_id=session.session_id,
         db=db,
         cfg=cfg,
+        skip_session_quota=unlimited,
     )
 
     try:
@@ -179,6 +181,7 @@ async def validate_and_estimate_upload(
         parser_name=parser_clean,
         session_row=session_row,
         cfg=cfg,
+        skip_session_quota=unlimited,
     )
 
     # If visitor provided a parser key for a parser they must fund, pre-flight test it
@@ -238,8 +241,9 @@ async def upload_document(
 
     # 2. Rate limit + daily upload cap (before reading a large body)
     client_ip = client_ip_from_request(request)
-    check_ip_rate_limit(client_ip)
-    check_ip_daily_upload_limit(db, client_ip)
+    unlimited = dev_loopback_unlimited(cfg, client_ip)
+    check_ip_rate_limit(client_ip, cfg)
+    check_ip_daily_upload_limit(db, client_ip, cfg)
 
     content_length = request.headers.get("content-length")
     if content_length:
@@ -269,6 +273,7 @@ async def upload_document(
         session_id=session.session_id,
         db=db,
         cfg=cfg,
+        skip_session_quota=unlimited,
     )
 
     # 5. Resolve parser. auto = owner-paid waterfall, never requires a visitor key.
@@ -296,7 +301,8 @@ async def upload_document(
             detail="Too many documents are being processed. Please wait and retry.",
         )
 
-    check_and_increment_daily_jobs(db, cfg)
+    if not unlimited:
+        check_and_increment_daily_jobs(db, cfg)
 
     # 6. Create job in SQLite
     job_id = "job_" + uuid.uuid4().hex[:12]
@@ -307,7 +313,7 @@ async def upload_document(
         status="queued",
     )
 
-    increment_ip_daily_uploads(db, client_ip)
+    increment_ip_daily_uploads(db, client_ip, cfg)
 
     # 8. Fire background task with a strong reference so it cannot be GC'd
     runner.spawn_ingestion_pipeline(

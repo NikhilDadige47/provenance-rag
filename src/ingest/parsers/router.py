@@ -30,7 +30,7 @@ from src.ingest.parsers.local_pymupdf import LocalPyMuPDFParser
 from src.ingest.parsers.selection import owner_parser_key
 from src.ingest.parsers.structured_doc import StructuredDoc
 from src.security.breaker import Breaker
-from src.security.config import OwnerConfig
+from src.security.config import OwnerConfig, dev_loopback_unlimited
 from src.security.credit_config import (
     GLOBAL_PARSE_CACHE_PARSER,
     GLOBAL_PARSE_CACHE_VERSION,
@@ -302,24 +302,55 @@ class FallbackParserRouter:
         cycle = cycle_str()
         vid = visitor_bucket_id(ctx.session_id, ctx.client_ip)
         pages = info.get("pages", 1)
+        unlimited = dev_loopback_unlimited(self.cfg, ctx.client_ip)
 
         if provider_name == "landingai":
             pool_key = landing_pool_key()
-            return [
+            buckets = [
                 Bucket(pool_key, units, usable_units("landing")),
                 Bucket(f"day:landing:{today}", units, daily_cap_units("landing")),
-                Bucket(f"u:{vid}:landing:{today}", units, VISITOR_ALLOWANCE["landing_units_day"]),
-                Bucket(f"u:{vid}:pages:{today}", pages, VISITOR_ALLOWANCE["paid_pages_day"], adjustable=False),
             ]
+            if not unlimited:
+                buckets.extend(
+                    [
+                        Bucket(
+                            f"u:{vid}:landing:{today}",
+                            units,
+                            VISITOR_ALLOWANCE["landing_units_day"],
+                        ),
+                        Bucket(
+                            f"u:{vid}:pages:{today}",
+                            pages,
+                            VISITOR_ALLOWANCE["paid_pages_day"],
+                            adjustable=False,
+                        ),
+                    ]
+                )
+            return buckets
 
         if provider_name == "llamaparse":
             pool_key = f"pool:llamaparse:{cycle}"
-            return [
+            buckets = [
                 Bucket(pool_key, units, usable_units("llamaparse")),
                 Bucket(f"day:llamaparse:{today}", units, daily_cap_units("llamaparse")),
-                Bucket(f"u:{vid}:llama:{today}", units, VISITOR_ALLOWANCE["llama_units_day"]),
-                Bucket(f"u:{vid}:pages:{today}", pages, VISITOR_ALLOWANCE["paid_pages_day"], adjustable=False),
             ]
+            if not unlimited:
+                buckets.extend(
+                    [
+                        Bucket(
+                            f"u:{vid}:llama:{today}",
+                            units,
+                            VISITOR_ALLOWANCE["llama_units_day"],
+                        ),
+                        Bucket(
+                            f"u:{vid}:pages:{today}",
+                            pages,
+                            VISITOR_ALLOWANCE["paid_pages_day"],
+                            adjustable=False,
+                        ),
+                    ]
+                )
+            return buckets
 
         return []
 

@@ -80,6 +80,7 @@ def validate_pdf_upload(
     session_id: str,
     db: DatabaseManager,
     cfg: OwnerConfig,
+    skip_session_quota: bool = False,
 ) -> ValidationResult:
     """Validate PDF upload for file integrity, encryption, size, and session caps.
 
@@ -170,7 +171,7 @@ def validate_pdf_upload(
     max_docs_session = cfg.session_max_documents
     max_pages_session = cfg.session_max_total_pages
 
-    if current_docs + 1 > max_docs_session:
+    if not skip_session_quota and current_docs + 1 > max_docs_session:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -179,7 +180,7 @@ def validate_pdf_upload(
             ),
         )
 
-    if current_pages + page_count > max_pages_session:
+    if not skip_session_quota and current_pages + page_count > max_pages_session:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -206,6 +207,7 @@ def build_upload_estimate(
     parser_name: str,
     session_row: dict[str, Any],
     cfg: OwnerConfig,
+    skip_session_quota: bool = False,
 ) -> UploadEstimateResponse:
     """Build user-facing upload estimate and quota preview."""
     requires_key = visitor_parser_key_required(parser_name, cfg)
@@ -217,7 +219,7 @@ def build_upload_estimate(
     max_pages = cfg.session_max_total_pages
     max_chunks = cfg.session_max_chunks_embedded
 
-    can_proceed = (
+    can_proceed = skip_session_quota or (
         (current_docs + 1 <= max_docs)
         and (current_pages + validation.page_count <= max_pages)
         and (current_chunks + validation.estimated_chunks <= max_chunks)

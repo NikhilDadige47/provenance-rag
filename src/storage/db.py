@@ -5,30 +5,50 @@ Tables: sessions, jobs, documents, parents, parse_cache, usage_daily.
 CRITICAL INVARIANT: Zero key/secret columns in any table.
 """
 
+import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from src.ingest.chunking.models import ParentChunk
+from src.storage.sql import open_sql_connection
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = _PROJECT_ROOT / "provenance_rag.db"
 
 
+def resolve_default_db_path(
+    data_dir: str | None = None,
+    sqlite_path: str | None = None,
+) -> Path:
+    """Pick the SQLite file for this process.
+
+    SQLITE_PATH wins when set. Otherwise DATA_DIR/provenance_rag.db.
+    Empty values fall back to the project-root file used in local dev.
+    """
+    exact = (sqlite_path if sqlite_path is not None else os.environ.get("SQLITE_PATH", "")).strip()
+    if exact:
+        path = Path(exact)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+    directory = (data_dir if data_dir is not None else os.environ.get("DATA_DIR", "")).strip()
+    if directory:
+        folder = Path(directory)
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder / "provenance_rag.db"
+    return DEFAULT_DB_PATH
+
+
 class DatabaseManager:
     """Manages SQLite tables, parent context lookups, and session usage tracking."""
 
-    def __init__(self, db_path: Path | str = DEFAULT_DB_PATH) -> None:
-        self.db_path = str(db_path)
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = str(db_path if db_path is not None else resolve_default_db_path())
         self.init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        return conn
+        return open_sql_connection(self.db_path, timeout=30.0, wal=True)
 
     def init_db(self) -> None:
         """Create tables if they do not exist."""
@@ -412,6 +432,18 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def list_incomplete_jobs(self) -> list[dict[str, Any]]:
+        """Return jobs that were still in-flight when the process last died."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM jobs
+                WHERE status IN ('queued', 'parsing', 'chunking', 'embedding', 'indexing')
+                """
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
     def insert_document(
         self,
         doc_id: str,
@@ -433,11 +465,23 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO documents (
+                INSERT INTO documents (
                     doc_id, session_id, title, content_hash, page_count,
                     parser_used, parser_version, quality_flags,
                     chunking_version, embedding_version, ingested_at, filename
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(doc_id) DO UPDATE SET
+                    session_id = excluded.session_id,
+                    title = excluded.title,
+                    content_hash = excluded.content_hash,
+                    page_count = excluded.page_count,
+                    parser_used = excluded.parser_used,
+                    parser_version = excluded.parser_version,
+                    quality_flags = excluded.quality_flags,
+                    chunking_version = excluded.chunking_version,
+                    embedding_version = excluded.embedding_version,
+                    ingested_at = excluded.ingested_at,
+                    filename = excluded.filename
                 """,
                 (
                     doc_id,

@@ -35,7 +35,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request, status
 
-from src.security.config import OwnerConfig
+from src.security.config import OwnerConfig, dev_loopback_unlimited, is_loopback_ip
 from src.security.credit_config import VISITOR_ALLOWANCE
 from src.storage.db import DatabaseManager
 
@@ -72,7 +72,7 @@ def _canonical_ip(client_ip: str) -> str:
         ip = ip[7:]
     if ip.count(":") == 1 and "." in ip:
         ip = ip.split(":", 1)[0]
-    if ip in {"::1", "localhost", "0:0:0:0:0:0:0:1"} or ip.startswith("127."):
+    if is_loopback_ip(ip):
         return "127.0.0.1"
     return ip
 
@@ -87,12 +87,14 @@ def _hash_ip(client_ip: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def check_ip_rate_limit(client_ip: str) -> None:
+def check_ip_rate_limit(client_ip: str, cfg: OwnerConfig | None = None) -> None:
     """Enforce per-IP rolling-window rate limit.
 
     Raises:
         HTTPException 429 if the IP exceeds MAX_REQUESTS_PER_WINDOW in the last minute.
     """
+    if dev_loopback_unlimited(cfg, client_ip):
+        return
     client_ip = _canonical_ip(client_ip) or client_ip
     now = _current_epoch()
     cutoff = now - RATE_WINDOW_SECONDS
@@ -117,8 +119,12 @@ def check_ip_rate_limit(client_ip: str) -> None:
         ts_queue.append(now)
 
 
-def get_ip_daily_owner_questions(db: DatabaseManager, client_ip: str) -> int:
+def get_ip_daily_owner_questions(
+    db: DatabaseManager, client_ip: str, cfg: OwnerConfig | None = None
+) -> int:
     """Owner-funded questions already used by this IP today (0 if none)."""
+    if dev_loopback_unlimited(cfg, client_ip):
+        return 0
     today = _current_date_str()
     ip_hash = _hash_ip(client_ip)
     with db._get_connection() as conn:
@@ -139,6 +145,8 @@ def check_and_increment_ip_owner_questions(
     Raises:
         HTTPException 429 when today's owner-funded budget is gone.
     """
+    if dev_loopback_unlimited(cfg, client_ip):
+        return 0
     cap = cfg.session_max_questions_owner_llm
     today = _current_date_str()
     ip_hash = _hash_ip(client_ip)
@@ -178,8 +186,12 @@ def check_and_increment_ip_owner_questions(
     return int(row["owner_questions"] or 1) if row else 1
 
 
-def check_ip_daily_upload_limit(db: DatabaseManager, client_ip: str) -> None:
+def check_ip_daily_upload_limit(
+    db: DatabaseManager, client_ip: str, cfg: OwnerConfig | None = None
+) -> None:
     """Enforce per-IP daily upload cap before a job is accepted."""
+    if dev_loopback_unlimited(cfg, client_ip):
+        return
     today = _current_date_str()
     ip_hash = _hash_ip(client_ip)
     with db._get_connection() as conn:
@@ -199,8 +211,12 @@ def check_ip_daily_upload_limit(db: DatabaseManager, client_ip: str) -> None:
         )
 
 
-def increment_ip_daily_uploads(db: DatabaseManager, client_ip: str) -> None:
+def increment_ip_daily_uploads(
+    db: DatabaseManager, client_ip: str, cfg: OwnerConfig | None = None
+) -> None:
     """Increment the IP's daily upload counter after a job is accepted."""
+    if dev_loopback_unlimited(cfg, client_ip):
+        return
     today = _current_date_str()
     ip_hash = _hash_ip(client_ip)
     with db._get_connection() as conn:
@@ -573,7 +589,8 @@ async def enforce_rate_limits(request: Request) -> None:
     Usage:
         @router.post("/chat", dependencies=[Depends(enforce_rate_limits)])
     """
-    check_ip_rate_limit(client_ip_from_request(request))
+    cfg = getattr(request.app.state, "cfg", None)
+    check_ip_rate_limit(client_ip_from_request(request), cfg)
 
 
 def client_ip_from_request(request: Request) -> str:

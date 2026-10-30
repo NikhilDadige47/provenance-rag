@@ -326,3 +326,15 @@ async def test_spawn_ingestion_retains_task_until_done(job_env) -> None:
     gate.set()
     await task
     assert task not in runner._tasks
+
+
+def test_fail_interrupted_jobs_marks_inflight_failed(job_env) -> None:
+    db, _store, runner, _cfg = job_env
+    db.create_job("job_stale", session_id="session_job_1", parser_name="local_pymupdf")
+    db.update_job("job_stale", status="embedding", doc_id="doc_partial")
+    marked = runner.fail_interrupted_jobs()
+    assert marked == 1
+    job = db.get_job("job_stale", session_id="session_job_1")
+    assert job is not None
+    assert job["status"] == "failed"
+    assert "interrupted" in (job.get("error_message") or "").lower()

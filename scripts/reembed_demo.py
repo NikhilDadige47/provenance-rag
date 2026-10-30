@@ -34,7 +34,7 @@ async def reembed_all() -> None:
     cfg = OwnerConfig.from_env()
     logger.info(f"Initiating demo re-embedding under version: {cfg.embedding_version}")
 
-    store = QdrantVectorStore()
+    store = QdrantVectorStore(cfg=cfg)
     db = DatabaseManager()
     chunker = HybridChunker()
     sparse_vectorizer = LocalSparseVectorizer()

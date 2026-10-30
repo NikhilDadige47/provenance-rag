@@ -32,6 +32,32 @@ ALLOWED_COHERE_EMBEDDER = {
 }
 
 
+def test_production_health_returns_503_when_not_ready(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("QDRANT_URL", ":memory:")
+
+    class DeadStore:
+        def ping(self) -> bool:
+            return False
+
+    with TestClient(app) as client:
+        cfg = getattr(app.state, "cfg", None)
+        assert cfg is not None
+        previous_env = cfg.app_env
+        previous_store = getattr(app.state, "store", None)
+        cfg.app_env = "production"
+        app.state.store = DeadStore()
+        try:
+            health = client.get("/health")
+            assert health.status_code == 503
+            body = health.json()
+            assert body["ready"] is False
+            assert body["status"] == "ok"
+        finally:
+            cfg.app_env = previous_env
+            app.state.store = previous_store
+
+
 def test_health_and_security_headers() -> None:
     client = TestClient(app)
     resp = client.get("/health")

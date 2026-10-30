@@ -14,11 +14,12 @@ and supports Redis if configured.
 from __future__ import annotations
 
 import logging
-import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+from src.storage.sql import open_sql_connection
 
 logger = logging.getLogger("provenance_rag.security.ledger")
 
@@ -41,10 +42,8 @@ class Ledger:
         self._lock = threading.Lock()
         self._init_table()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _get_connection(self):
+        return open_sql_connection(self.db_path, timeout=10.0, wal=False)
 
     def _init_table(self) -> None:
         """Create credit ledger table if it does not exist."""

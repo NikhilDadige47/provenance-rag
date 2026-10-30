@@ -59,6 +59,21 @@ class OwnerConfig(BaseSettings):
     qdrant_api_key: Secret | None = Field(default=None)
     qdrant_collection: str = Field(default="provenance_rag_v1")
 
+    # Persistent SQLite (production mounts DATA_DIR on a disk)
+    data_dir: str = Field(
+        default="",
+        description="Directory for provenance_rag.db. Empty = project root.",
+    )
+    sqlite_path: str = Field(
+        default="",
+        description="Exact SQLite file path. Overrides DATA_DIR when set.",
+    )
+    turso_database_url: str = Field(
+        default="",
+        description="libsql://... Turso URL. When set, SQLite is not stored on disk.",
+    )
+    turso_auth_token: Secret | None = Field(default=None)
+
     # Default LLM (Owner-Funded)
     default_llm_provider: str = Field(default="groq")
     default_llm_api_key: Secret = Field(default=Secret("gsk_placeholder"))
@@ -118,6 +133,31 @@ class VisitorKeys(BaseModel):
     llm_model: str | None = Field(
         default=None, description="Specific model requested on the visitor key"
     )
+
+
+def is_loopback_ip(client_ip: str) -> bool:
+    """True for localhost aliases (127.0.0.1, ::1, IPv4-mapped)."""
+    ip = (client_ip or "").strip().strip("[]").lower()
+    if ip.startswith("::ffff:"):
+        ip = ip[7:]
+    if ip.count(":") == 1 and "." in ip:
+        ip = ip.split(":", 1)[0]
+    return ip in {"::1", "localhost", "0:0:0:0:0:0:0:1", "127.0.0.1"} or ip.startswith(
+        "127."
+    )
+
+
+def dev_loopback_unlimited(cfg: OwnerConfig | None, client_ip: str) -> bool:
+    """Skip visitor spend caps for local developers.
+
+    Production never skips: a spoofed X-Forwarded-For of 127.0.0.1 must not
+    unlock unlimited owner-funded usage.
+    """
+    if cfg is None:
+        return False
+    if (cfg.app_env or "").lower() == "production":
+        return False
+    return is_loopback_ip(client_ip)
 
 
 def detect_access_tier(keys: VisitorKeys, upload_requested: bool = False) -> AccessTier:
