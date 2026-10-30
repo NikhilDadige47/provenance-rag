@@ -78,8 +78,12 @@ def _canonical_ip(client_ip: str) -> str:
 
 
 def _hash_ip(client_ip: str) -> str:
-    """Store a digest, never the raw address."""
-    return hashlib.sha256(f"provenance-ip-v1:{_canonical_ip(client_ip)}".encode()).hexdigest()
+    """Store a digest, never the raw address.
+
+    v2 ignores rows written by the old rowcount/changes() check, which could
+    reject a first question and still leave owner_questions at the cap.
+    """
+    return hashlib.sha256(f"provenance-ip-v2:{_canonical_ip(client_ip)}".encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -160,21 +164,16 @@ def check_and_increment_ip_owner_questions(
             """,
             (ip_hash, today),
         )
-        # changes(), not cursor.rowcount. libsql/Turso's rowcount is a running
-        # total for the connection, so INSERT + UPDATE reports 2 and a
-        # `rowcount != 1` check rejects the visitor's first question.
-        # RETURNING also leaves the statement open and commit then fails.
+        # Decide from the stored count. Turso's cursor.rowcount is a running
+        # total, and changes() is 0 on the remote connection, so either one
+        # rejects a brand-new visitor as if all 15 questions were already used.
         cursor.execute(
-            """
-            UPDATE ip_usage_daily
-            SET owner_questions = owner_questions + 1
-            WHERE ip_hash = ? AND date = ? AND owner_questions < ?
-            """,
-            (ip_hash, today, cap),
+            "SELECT owner_questions FROM ip_usage_daily WHERE ip_hash = ? AND date = ?",
+            (ip_hash, today),
         )
-        changed = cursor.execute("SELECT changes()").fetchone()
-        applied = int(changed[0] if changed is not None else 0)
-        if applied != 1:
+        existing = cursor.fetchone()
+        current = int(existing["owner_questions"] or 0) if existing else 0
+        if current >= cap:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(
@@ -184,12 +183,30 @@ def check_and_increment_ip_owner_questions(
                 headers={"Retry-After": "86400"},
             )
         cursor.execute(
+            """
+            UPDATE ip_usage_daily
+            SET owner_questions = ?
+            WHERE ip_hash = ? AND date = ? AND owner_questions = ?
+            """,
+            (current + 1, ip_hash, today, current),
+        )
+        cursor.execute(
             "SELECT owner_questions FROM ip_usage_daily WHERE ip_hash = ? AND date = ?",
             (ip_hash, today),
         )
         row = cursor.fetchone()
         conn.commit()
-    return int(row["owner_questions"] or 1) if row else 1
+    updated = int(row["owner_questions"] or 0) if row else current + 1
+    if updated >= cap and updated != current + 1:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"You have used all {cap} owner-funded questions for today on this connection. "
+                "Provide your own LLM API key to continue, or try again tomorrow."
+            ),
+            headers={"Retry-After": "86400"},
+        )
+    return updated if updated > current else current + 1
 
 
 def check_ip_daily_upload_limit(

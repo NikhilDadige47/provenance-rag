@@ -230,10 +230,10 @@ class TestIPDailyQuestionCap:
     def test_first_question_allowed_when_driver_rowcount_is_cumulative(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Turso/libsql rowcount is a connection total, not the last statement.
+        """A new visitor is allowed through on libsql/Turso.
 
-        INSERT then UPDATE used to look like 2 rows changed, so the first
-        owner-funded question was rejected as if all 15 were already used.
+        The old check treated rowcount or changes() as the quota and rejected
+        the first question. The stored counter is the only signal that counts.
         """
         db_file = tmp_path / "libsql_quota.db"
         monkeypatch.setenv("TURSO_DATABASE_URL", str(db_file))
