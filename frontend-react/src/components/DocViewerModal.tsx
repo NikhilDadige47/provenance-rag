@@ -1,7 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { FileText, Loader2, Maximize2, Minimize2, X } from 'lucide-react';
+import { ExternalLink, FileText, Loader2, Maximize2, Minimize2, X } from 'lucide-react';
+import { useCompactLayout } from '../lib/useCompactLayout';
+
+const PdfCanvasViewer = lazy(() =>
+  import('./PdfCanvasViewer').then((mod) => ({ default: mod.PdfCanvasViewer }))
+);
 
 export interface DemoDocData {
   title: string;
@@ -23,6 +28,7 @@ function isBlobUrl(url: string): boolean {
 }
 
 export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) => {
+  const compact = useCompactLayout();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,15 +124,15 @@ export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) 
           />
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.97, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
-            className={`relative z-10 flex flex-col overflow-hidden bg-card border border-border shadow-2xl ${
+            className={`relative z-10 flex min-h-0 w-full flex-col overflow-hidden bg-card border border-border shadow-2xl ${
               expanded
-                ? 'w-full h-full max-w-none rounded-none'
-                : 'h-[100dvh] w-full max-w-4xl rounded-none sm:h-[90vh] sm:rounded-xl'
+                ? 'h-full max-w-none'
+                : 'h-full sm:h-[90vh] sm:max-w-4xl sm:rounded-xl'
             }`}
           >
             <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-border surface-header px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 sm:px-4 sm:py-2">
@@ -141,6 +147,18 @@ export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) 
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
+                {objectUrl && (
+                  <a
+                    href={objectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex size-10 items-center justify-center rounded-full border border-border bg-background text-foreground sm:hidden"
+                    title="Open PDF"
+                    aria-label="Open PDF"
+                  >
+                    <ExternalLink className="size-4" />
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => setExpanded((v) => !v)}
@@ -162,26 +180,39 @@ export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) 
               </div>
             </header>
 
-            <div className="relative flex-1 min-h-0 bg-muted/20">
+            <div className="relative min-h-0 flex-1 bg-muted/20">
               {loading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Loader2 className="size-6 animate-spin text-primary" />
                   <p className="text-sm">Loading filing…</p>
                 </div>
               )}
               {error && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-6 text-center">
                   <FileText className="size-8 text-muted-foreground" />
                   <p className="font-medium text-sm text-foreground">PDF preview unavailable</p>
                   <p className="text-xs text-muted-foreground max-w-sm">{error}</p>
                 </div>
               )}
-              {objectUrl && !error && (
-                <iframe
-                  src={`${objectUrl}#toolbar=1&navpanes=0&view=FitH`}
-                  title={doc.title}
-                  className="w-full h-full border-none bg-white"
-                />
+              {objectUrl && !error && !loading && (
+                compact ? (
+                  <Suspense
+                    fallback={
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                        <Loader2 className="size-6 animate-spin text-primary" />
+                        <p className="text-sm">Preparing preview…</p>
+                      </div>
+                    }
+                  >
+                    <PdfCanvasViewer url={objectUrl} />
+                  </Suspense>
+                ) : (
+                  <iframe
+                    src={`${objectUrl}#toolbar=1&navpanes=0&view=FitH`}
+                    title={doc.title}
+                    className="absolute inset-0 h-full w-full border-none bg-white"
+                  />
+                )
               )}
             </div>
           </motion.div>
