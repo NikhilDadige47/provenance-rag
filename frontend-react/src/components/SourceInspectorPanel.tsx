@@ -38,7 +38,7 @@ export const SourceInspectorPanel: React.FC<SourceInspectorPanelProps> = ({
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'tween', duration: 0.22, ease: 'easeInOut' }}
-          className="absolute inset-y-0 right-0 z-30 w-[min(28rem,92%)] bg-card border-l border-border shadow-[-12px_0_32px_rgba(0,0,0,0.12)] flex"
+          className="absolute inset-0 z-30 flex w-full bg-card border-l border-border shadow-[-12px_0_32px_rgba(0,0,0,0.12)] sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[min(28rem,92%)]"
           aria-label="Source inspector"
         >
           <button
@@ -46,7 +46,7 @@ export const SourceInspectorPanel: React.FC<SourceInspectorPanelProps> = ({
             onClick={onToggle}
             title="Collapse source panel"
             aria-label="Collapse source panel"
-            className="absolute -left-3 top-1/2 -translate-y-1/2 z-40 size-6 rounded-full bg-card border border-border shadow-sm text-muted-foreground hover:text-foreground hover:border-primary/40 flex items-center justify-center cursor-pointer"
+            className="absolute -left-3 top-1/2 -translate-y-1/2 z-40 hidden size-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:border-primary/40 hover:text-foreground sm:flex"
           >
             <ChevronLeft className="size-3.5" />
           </button>
@@ -62,7 +62,7 @@ export const SourceInspectorPanel: React.FC<SourceInspectorPanelProps> = ({
                 onClick={onClose}
                 title="Close"
                 aria-label="Close source panel"
-                className="size-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center cursor-pointer"
+                className="flex size-10 sm:size-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
               >
                 <X className="size-3.5" />
               </button>
@@ -107,7 +107,7 @@ export const SourceInspectorPanel: React.FC<SourceInspectorPanelProps> = ({
           onClick={onToggle}
           title="Expand source panel"
           aria-label="Expand source panel"
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-30 h-14 w-6 rounded-l-md bg-card border border-r-0 border-border shadow-sm text-muted-foreground hover:text-foreground hover:border-primary/40 flex items-center justify-center cursor-pointer"
+          className="absolute right-0 top-1/2 z-30 flex h-16 w-10 -translate-y-1/2 items-center justify-center rounded-l-md border border-r-0 border-border bg-card text-muted-foreground shadow-sm hover:border-primary/40 hover:text-foreground sm:h-14 sm:w-6"
         >
           <ChevronRight className="size-3.5" />
         </motion.button>

@@ -6,6 +6,8 @@ import { SectionFooter } from './components/SectionFooter';
 import { DeleteModal } from './components/DeleteModal';
 import { Toast, ToastMessage } from './components/Toast';
 import { LandingPage } from './components/LandingPage';
+import { MobilePane, MobilePaneSwitch, MobileTabBar, MobileTopBar } from './components/MobileChrome';
+import { useCompactLayout } from './lib/useCompactLayout';
 import { AccessTier, UsageInfo, ExampleQuestion, UploadedDoc, LLMConfig } from './types';
 import { api } from './lib/api';
 import {
@@ -74,6 +76,9 @@ export function App() {
 
   // Nav sidebar collapse state
   const [isNavCollapsed, setIsNavCollapsed] = useState<boolean>(false);
+  const compact = useCompactLayout();
+  const [mobilePane, setMobilePane] = useState<MobilePane>('context');
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   // Section 2 (Middle details panel) custom width in pixels (null = equal 50/50 division by default)
   const [middleWidth, setMiddleWidth] = useState<number | null>(() => {
@@ -93,6 +98,38 @@ export function App() {
   const effectiveMiddleWidth = middleWidth !== null
     ? (isNavCollapsed ? middleWidth + 152 : middleWidth)
     : null;
+
+  useEffect(() => {
+    if (!compact) {
+      setKeyboardOpen(false);
+      return;
+    }
+
+    const isTextField = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (tag !== 'INPUT') return false;
+      const type = (el as HTMLInputElement).type;
+      return !['checkbox', 'radio', 'file', 'button', 'submit', 'hidden'].includes(type);
+    };
+
+    const onFocusIn = (event: FocusEvent) => {
+      if (isTextField(event.target)) setKeyboardOpen(true);
+    };
+    const onFocusOut = () => {
+      window.setTimeout(() => {
+        if (!isTextField(document.activeElement)) setKeyboardOpen(false);
+      }, 120);
+    };
+
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+    };
+  }, [compact]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -356,6 +393,7 @@ export function App() {
     }
     setActiveNav(item);
     applyNavScope(item);
+    setMobilePane('context');
   };
 
   const handleStartIngest = async (file: File) => {
@@ -411,6 +449,7 @@ export function App() {
   const handleAskExample = (q: string) => {
     setQueuedQuestion(q);
     setQueuedNonce((n) => n + 1);
+    setMobilePane('chat');
   };
 
   // Resizable divider drag handlers
@@ -453,6 +492,9 @@ export function App() {
   };
 
   const hideChat = activeNav === 'limits';
+  const showContext = !compact || mobilePane === 'context' || hideChat;
+  const showChat = !hideChat && (!compact || mobilePane === 'chat');
+  const showMobileSwitcher = compact && !hideChat && !keyboardOpen;
 
   if (surface === 'landing') {
     return (
@@ -469,8 +511,24 @@ export function App() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden surface-shell text-foreground transition-colors select-none">
-      <div className="flex-1 min-h-0 flex overflow-hidden">
+    <div className="h-dvh w-full max-w-[100vw] flex flex-col overflow-hidden surface-shell text-foreground transition-colors lg:select-none">
+      {compact && (
+        <MobileTopBar
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onBrandClick={returnToOverview}
+          usage={usage}
+          hasVisitorKey={Boolean(visitorLlm)}
+          onAddKey={() => handleSelectNav('tier_b')}
+          onOpenLimits={() => handleSelectNav('limits')}
+        />
+      )}
+
+      {showMobileSwitcher && (
+        <MobilePaneSwitch activeNav={activeNav} pane={mobilePane} onChange={setMobilePane} />
+      )}
+
+      <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden">
         {/* SECTION 1: Nav Sidebar Menu with Collapse Control */}
         <NavSidebar
           activeNav={activeNav}
@@ -497,7 +555,7 @@ export function App() {
           }}
           onAskExample={handleAskExample}
           exampleChips={exampleChips}
-          width={hideChat ? null : effectiveMiddleWidth}
+          width={hideChat || compact ? null : effectiveMiddleWidth}
           isDragging={isDragging}
           theme={theme}
           onToggleTheme={toggleTheme}
@@ -506,10 +564,13 @@ export function App() {
           suggestedQuestions={suggestedQuestions}
           onGoToUpload={() => handleSelectNav('tier_b')}
           hasVisitorKey={Boolean(visitorLlm)}
+          fillWidth={compact}
+          hideHeader={compact}
+          concealed={!showContext}
         />
 
         {/* INTERACTIVE RESIZABLE DIVIDER LINE (Between Section 2 and Section 3) */}
-        {!hideChat && (
+        {!hideChat && !compact && (
         <div
           onMouseDown={handleMouseDownDivider}
           onDoubleClick={handleResetDivider}
@@ -526,11 +587,13 @@ export function App() {
         {/* SECTION 3: Primary Chatbox Canvas (Equally divided 50/50 by default, attached to borders) */}
         <main
           className={
-            hideChat
-              ? 'hidden'
-              : 'flex-1 basis-0 min-w-[400px] flex flex-col h-full overflow-hidden'
+            showChat
+              ? compact
+                ? 'flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden'
+                : 'flex min-h-0 min-w-[400px] flex-1 basis-0 flex-col overflow-hidden'
+              : 'hidden'
           }
-          aria-hidden={hideChat}
+          aria-hidden={!showChat}
         >
           <ChatContainer
             scope={scope}
@@ -550,11 +613,21 @@ export function App() {
             usage={usage}
             hasVisitorKey={Boolean(visitorLlm)}
             onOpenLimits={() => handleSelectNav('limits')}
+            compact={compact}
+            onShowContext={() => setMobilePane('context')}
           />
         </main>
       </div>
 
-      <SectionFooter />
+      {!compact && <SectionFooter />}
+
+      {compact && !keyboardOpen && (
+        <MobileTabBar
+          activeNav={activeNav}
+          onSelectNav={handleSelectNav}
+          isIngesting={isIngesting}
+        />
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteModal
@@ -565,7 +638,15 @@ export function App() {
       />
 
       {/* Toast Notification Hub */}
-      <Toast toasts={toasts} onDismiss={removeToast} />
+      <Toast
+        toasts={toasts}
+        onDismiss={removeToast}
+        className={
+          compact && !keyboardOpen
+            ? 'bottom-[calc(4.25rem+env(safe-area-inset-bottom))]'
+            : undefined
+        }
+      />
     </div>
   );
 }

@@ -10,11 +10,16 @@ export interface ToastMessage {
 interface ToastProps {
   toasts: ToastMessage[];
   onDismiss: (id: string) => void;
+  className?: string;
 }
 
-export const Toast: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
+export const Toast: React.FC<ToastProps> = ({ toasts, onDismiss, className }) => {
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div
+      className={`fixed z-[70] flex flex-col gap-2 pointer-events-none left-3 right-3 sm:left-auto sm:right-4 sm:w-full sm:max-w-sm ${
+        className || 'bottom-4'
+      }`}
+    >
       {toasts.map((t) => {
         const icons = {
           info: <Info className="size-4 text-blue-500 shrink-0" />,
@@ -33,11 +38,11 @@ export const Toast: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
         return (
           <div
             key={t.id}
-            className={`pointer-events-auto p-3.5 rounded-lg border shadow-lg flex items-center justify-between gap-3 text-xs animate-in slide-in-from-bottom-2 duration-200 ${borders[t.type]}`}
+            className={`pointer-events-auto p-3.5 rounded-lg border shadow-lg flex items-start justify-between gap-3 text-xs animate-in slide-in-from-bottom-2 duration-200 ${borders[t.type]}`}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-start gap-2 min-w-0">
               {icons[t.type]}
-              <span>{t.message}</span>
+              <span className="break-words">{t.message}</span>
             </div>
             <button
               onClick={() => onDismiss(t.id)}

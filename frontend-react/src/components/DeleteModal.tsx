@@ -20,12 +20,12 @@ export const DeleteModal: React.FC<DeleteModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0 duration-200">
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg space-y-4">
-        <div className="flex items-center gap-3 text-destructive">
-          <div className="size-10 rounded-full bg-destructive/10 flex items-center justify-center">
+        <div className="flex items-start gap-3 text-destructive">
+          <div className="size-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
             <AlertTriangle className="size-5" />
           </div>
-          <div>
-            <h3 className="font-semibold text-base text-foreground">Wipe Session Documents</h3>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-base text-foreground leading-tight">Wipe Session Documents</h3>
             <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
           </div>
         </div>
@@ -34,8 +34,8 @@ export const DeleteModal: React.FC<DeleteModalProps> = ({
           Deleting your session will immediately purge all uploaded PDF files from disk, remove all vector points from Qdrant, clear sparse BM25 indices, and revoke your session token.
         </p>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={isDeleting}>
+        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={isDeleting} className="h-11 w-full sm:h-8 sm:w-auto">
             Cancel
           </Button>
           <Button
@@ -43,7 +43,7 @@ export const DeleteModal: React.FC<DeleteModalProps> = ({
             size="sm"
             onClick={onConfirm}
             disabled={isDeleting}
-            className="gap-1.5"
+            className="h-11 w-full gap-1.5 sm:h-8 sm:w-auto"
           >
             <Trash2 className="size-3.5" />
             <span>{isDeleting ? 'Wiping...' : 'Confirm Wipe'}</span>

@@ -138,7 +138,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   return (
     <div className="space-y-4">
       {/* Upload Box */}
-      <div className="border border-border/80 rounded-lg p-5 surface-inset shadow-sm space-y-4">
+      <div className="border border-border/80 rounded-lg p-4 sm:p-5 surface-inset shadow-sm space-y-4">
         <div className="space-y-2">
           <div className="space-y-0.5">
             <h3 className="font-semibold text-base text-foreground">Document Ingestion</h3>
@@ -177,7 +177,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             termsAccepted &&
             fileInputRef.current?.click()
           }
-          className={`border border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
+          className={`border border-dashed rounded-lg min-h-[8.5rem] p-5 sm:p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
             dragActive
               ? 'border-primary bg-primary/5'
               : 'border-border/80 hover:border-primary/50 hover:bg-muted/20'
@@ -204,7 +204,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
                 ? 'Document cap reached for this session'
                 : atPageCap
                   ? 'Page cap reached for this session'
-                  : 'Click to browse or drop your PDF here'}
+                  : 'Choose a PDF, or drop it here'}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             PDF files only (max 10MB, up to {quota.pagesMax} pages)
@@ -220,7 +220,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
               setTermsAccepted(next);
               persistTermsAccepted(next);
             }}
-            className="size-3.5 mt-0.5 rounded border-border text-primary accent-primary cursor-pointer"
+            className="size-4 mt-0.5 shrink-0 rounded border-border text-primary accent-primary cursor-pointer"
           />
           <span>
             I have the right to upload this file. Text may be sent to the selected parser, Cohere,
@@ -265,7 +265,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
               type="checkbox"
               checked={useCustomKey}
               onChange={(e) => handleToggleCustomKey(e.target.checked)}
-              className="size-3.5 rounded border-border text-primary focus:ring-primary cursor-pointer accent-primary"
+              className="size-4 shrink-0 rounded border-border text-primary focus:ring-primary cursor-pointer accent-primary"
             />
             <span>I want to use my own LLM API Key (Optional)</span>
           </label>
@@ -304,9 +304,9 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
                 key={idx}
                 type="button"
                 onClick={() => onAskExample(q)}
-                className="text-left p-2 rounded-md bg-card hover:bg-muted border border-border/80 hover:border-primary/50 text-muted-foreground hover:text-foreground flex items-center justify-between gap-2 transition-colors cursor-pointer group"
+                className="min-h-11 text-left p-2.5 rounded-md bg-card hover:bg-muted border border-border/80 hover:border-primary/50 text-muted-foreground hover:text-foreground flex items-center justify-between gap-2 transition-colors cursor-pointer group"
               >
-                <span className="line-clamp-1">{q}</span>
+                <span className="line-clamp-2 sm:line-clamp-1">{q}</span>
                 <ArrowRight className="size-3 text-primary opacity-60 group-hover:opacity-100 shrink-0" />
               </button>
             ))}
@@ -315,14 +315,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
       )}
 
       {/* Session Ingested Documents List with Click to View PDF Modal */}
-      <div className="border border-border rounded-lg p-5 surface-inset shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="size-4 text-primary" />
-            <h4 className="font-semibold text-sm">Session Ingested Documents</h4>
+      <div className="border border-border rounded-lg p-4 sm:p-5 surface-inset shadow-sm space-y-3">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="size-4 text-primary shrink-0" />
+            <h4 className="font-semibold text-sm">Session documents</h4>
           </div>
-          <span className="text-xs font-mono text-muted-foreground">
-            {docsUsed} / {quota.docsMax} documents · {pagesUsed} / {quota.pagesMax} pages
+          <span className="text-[11px] sm:text-xs font-mono text-muted-foreground">
+            {docsUsed} / {quota.docsMax} docs · {pagesUsed} / {quota.pagesMax} pages
           </span>
         </div>
 
@@ -340,10 +340,10 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenDocPreview(doc)}
-                  className="flex-1 min-w-0 p-3 flex items-center justify-between gap-3 text-left cursor-pointer"
+                  className="flex-1 min-w-0 p-3 flex flex-col items-stretch gap-2 text-left cursor-pointer sm:flex-row sm:items-center sm:justify-between"
                   title={`Click to preview ${doc.filename}`}
                 >
-                  <span className="flex items-center gap-2.5 min-w-0">
+                  <span className="flex items-start gap-2.5 min-w-0">
                     <FileText className="size-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
                     <span className="min-w-0">
                       <span className="font-medium text-foreground truncate group-hover:text-primary transition-colors block">
@@ -364,7 +364,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
                       )}
                     </span>
                   </span>
-                  <span className="flex items-center gap-1.5 shrink-0">
+                  <span className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end">
                     <ParserBadge parser={doc.parser_tier} degraded={doc.degraded} />
                     <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
                       View PDF
@@ -375,7 +375,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
                   variant="ghost"
                   size="icon"
                   onClick={() => onRequestDelete()}
-                  className="size-7 mr-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                  className="size-10 sm:size-7 mr-1 sm:mr-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                   title="Wipe document vectors"
                 >
                   <Trash2 className="size-3.5" />

@@ -82,7 +82,7 @@ export const TierADemo: React.FC<TierADemoProps> = ({ onAskExample, exampleChips
               key={doc.filename}
               type="button"
               onClick={() => setSelectedDoc(doc)}
-              className="min-w-0 rounded-md border border-border/70 bg-muted/15 hover:bg-muted/40 hover:border-primary/40 transition-colors cursor-pointer px-1.5 py-1.5 flex items-center gap-1.5 text-left group"
+              className="min-h-11 min-w-0 rounded-md border border-border/70 bg-muted/15 hover:bg-muted/40 hover:border-primary/40 transition-colors cursor-pointer px-1.5 py-2 flex items-center gap-1.5 text-left group"
               title={`Click to preview ${doc.title}`}
             >
               <FileText className="size-3 text-muted-foreground group-hover:text-primary shrink-0" />
@@ -104,13 +104,13 @@ export const TierADemo: React.FC<TierADemoProps> = ({ onAskExample, exampleChips
               {sampleQuestions.length}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-1">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 sm:gap-1">
             {sampleQuestions.map((q, idx) => (
               <button
                 key={`${idx}-${q}`}
                 type="button"
                 onClick={() => onAskExample(q)}
-                className="w-full text-left text-[11px] leading-snug bg-muted/30 hover:bg-muted border border-border/60 hover:border-primary/40 rounded px-1.5 py-1 transition-colors text-muted-foreground hover:text-foreground flex items-start gap-1 group cursor-pointer"
+                className="min-h-11 w-full text-left text-xs sm:text-[11px] leading-snug bg-muted/30 hover:bg-muted border border-border/60 hover:border-primary/40 rounded-md px-2.5 py-2.5 sm:px-1.5 sm:py-1 transition-colors text-muted-foreground hover:text-foreground flex items-start gap-1.5 group cursor-pointer"
               >
                 <span className="line-clamp-2 flex-1 min-w-0">{q}</span>
                 <ArrowRight className="size-2.5 mt-0.5 opacity-30 group-hover:opacity-100 group-hover:text-primary transition-opacity shrink-0" />

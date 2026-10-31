@@ -79,7 +79,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ open, onClose, onAccept 
         aria-label="Close terms"
         onClick={onClose}
       />
-      <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">
+      <div className="relative z-10 flex max-h-[min(92dvh,40rem)] w-full max-w-md flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
         <header className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="flex items-start gap-2.5 min-w-0">
             <FileText className="mt-0.5 size-4 text-primary shrink-0" />
@@ -101,7 +101,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ open, onClose, onAccept 
             <X className="size-4" />
           </button>
         </header>
-        <ol className="max-h-[min(52vh,22rem)] overflow-y-auto px-5 py-3 space-y-3">
+        <ol className="min-h-0 flex-1 overflow-y-auto px-5 py-3 space-y-3">
           {TERMS.map((item, i) => (
             <li key={item.title} className="flex gap-3 text-xs leading-relaxed">
               <span className="font-mono text-[10px] text-primary pt-0.5">{i + 1}</span>
@@ -112,12 +112,13 @@ export const TermsModal: React.FC<TermsModalProps> = ({ open, onClose, onAccept 
             </li>
           ))}
         </ol>
-        <footer className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}>
+        <footer className="flex shrink-0 flex-col gap-2 border-t border-border px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
+          <Button variant="outline" size="sm" onClick={onClose} className="h-11 w-full sm:h-8 sm:w-auto">
             Close
           </Button>
           <Button
             size="sm"
+            className="h-11 w-full sm:h-8 sm:w-auto"
             onClick={() => {
               persistTermsAccepted(true);
               onAccept();

@@ -27,6 +27,9 @@ interface SectionDetailsProps {
   suggestedQuestions?: string[];
   onGoToUpload?: () => void;
   hasVisitorKey?: boolean;
+  fillWidth?: boolean;
+  hideHeader?: boolean;
+  concealed?: boolean;
 }
 
 export const SectionDetails: React.FC<SectionDetailsProps> = ({
@@ -48,6 +51,9 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
   suggestedQuestions = [],
   onGoToUpload,
   hasVisitorKey = false,
+  fillWidth = false,
+  hideHeader = false,
+  concealed = false,
 }) => {
   const sectionHeaders: Record<NavItem, { title: string; subtitle: string }> = {
     tier_a: {
@@ -66,12 +72,27 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
 
   return (
     <section
-      style={width ? { width: `${width}px`, minWidth: '400px' } : { minWidth: '400px' }}
-      className={`surface-panel flex flex-col h-full overflow-hidden min-w-[400px] ${
-        isDragging ? 'transition-none' : 'transition-[width] duration-200 ease-out'
-      } ${width ? 'shrink-0' : 'flex-1 basis-0'}`}
+      style={
+        concealed || fillWidth
+          ? undefined
+          : width
+            ? { width: `${width}px`, minWidth: '400px' }
+            : { minWidth: '400px' }
+      }
+      className={
+        concealed
+          ? 'hidden'
+          : `surface-panel flex min-h-0 min-w-0 flex-col overflow-hidden ${
+              fillWidth
+                ? 'h-full w-full max-w-full flex-1'
+                : `h-full min-w-[400px] ${
+                    isDragging ? 'transition-none' : 'transition-[width] duration-200 ease-out'
+                  } ${width ? 'shrink-0' : 'flex-1 basis-0'}`
+            }`
+      }
     >
       {/* Details Section Header */}
+      {!hideHeader && (
       <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between shrink-0">
         <div className="min-w-0 pr-2">
           <h2 className="font-semibold text-sm leading-tight text-foreground truncate">
@@ -95,9 +116,10 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
           </Button>
         )}
       </div>
+      )}
 
       {/* Dynamic Content Panel */}
-      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+      <div className="p-3 sm:p-4 space-y-4 flex-1 min-h-0 overflow-y-auto">
         {ingest && ingest.phase !== 'done' && ingest.phase !== 'error' && activeNav !== 'tier_b' && (
           <button
             type="button"

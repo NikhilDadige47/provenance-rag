@@ -8,6 +8,8 @@ interface AllowanceMeterProps {
   hasVisitorKey?: boolean;
   onAddKey?: () => void;
   onOpenLimits?: () => void;
+  /** Icon-and-count only. Used in the phone app bar. */
+  dense?: boolean;
 }
 
 export const AllowanceMeter: React.FC<AllowanceMeterProps> = ({
@@ -15,6 +17,7 @@ export const AllowanceMeter: React.FC<AllowanceMeterProps> = ({
   hasVisitorKey = false,
   onAddKey,
   onOpenLimits,
+  dense = false,
 }) => {
   const ttl = useLiveTtl(usage);
   const { ownerRemaining, ownerMax, ownerExhausted, ownUsed, ownMax } = readUsage(usage);
@@ -26,7 +29,7 @@ export const AllowanceMeter: React.FC<AllowanceMeterProps> = ({
 
   if (!usage) {
     return (
-      <div className="h-8 w-44 rounded-full bg-muted/60 animate-pulse" aria-hidden />
+      <div className={`h-8 rounded-full bg-muted/60 animate-pulse ${dense ? 'w-16' : 'w-44'}`} aria-hidden />
     );
   }
 
@@ -51,27 +54,34 @@ export const AllowanceMeter: React.FC<AllowanceMeterProps> = ({
         <span className="font-mono text-[11px] font-semibold text-foreground whitespace-nowrap">
           {remaining} left
         </span>
-        <span className="hidden sm:inline text-[10px] text-muted-foreground font-mono">
-          / {max}
-        </span>
-        <span className="hidden md:inline h-1 w-12 rounded-full bg-muted overflow-hidden">
-          <span
-            className={`block h-full ${warn || usedPct > 80 ? 'bg-amber-500' : 'bg-primary'}`}
-            style={{ width: `${usedPct}%` }}
-          />
-        </span>
-        <span className="hidden lg:inline text-[10px] text-muted-foreground font-mono whitespace-nowrap">
-          {formatTtl(ttl)}
-        </span>
+        {!dense && (
+          <>
+            <span className="hidden sm:inline text-[10px] text-muted-foreground font-mono">
+              / {max}
+            </span>
+            <span className="hidden md:inline h-1 w-12 rounded-full bg-muted overflow-hidden">
+              <span
+                className={`block h-full ${warn || usedPct > 80 ? 'bg-amber-500' : 'bg-primary'}`}
+                style={{ width: `${usedPct}%` }}
+              />
+            </span>
+            <span className="hidden lg:inline text-[10px] text-muted-foreground font-mono whitespace-nowrap">
+              {formatTtl(ttl)}
+            </span>
+          </>
+        )}
       </button>
       {showKeyCta && onAddKey && (
         <button
           type="button"
           onClick={onAddKey}
-          className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors shrink-0"
+          aria-label="Add your LLM key"
+          className={`inline-flex items-center justify-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-[11px] font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors shrink-0 ${
+            dense ? 'size-10 px-0' : 'px-2 py-1'
+          }`}
         >
-          <KeyRound className="size-3" />
-          Add your key
+          <KeyRound className="size-3.5" />
+          <span className={dense ? 'sr-only' : ''}>Add your key</span>
         </button>
       )}
     </div>

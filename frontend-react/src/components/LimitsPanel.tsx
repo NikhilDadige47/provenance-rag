@@ -41,7 +41,7 @@ function Meter({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="flex justify-between text-[11px] text-muted-foreground gap-2">
+      <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
         <span>{usedLabel}</span>
         <span>{hint}</span>
       </div>
@@ -61,8 +61,8 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({
 
   return (
     <div className="space-y-5">
-      <div className="border border-border rounded-lg p-5 surface-inset shadow-sm space-y-4">
-        <div className="flex items-center justify-between gap-2">
+      <div className="border border-border rounded-lg p-4 sm:p-5 surface-inset shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <Gauge className="size-5 text-primary shrink-0" />
             <h3 className="font-semibold text-base">Session limits</h3>
@@ -128,7 +128,7 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({
           hint="Owner-paid parse, local floor"
         />
 
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2 text-[11px]">
           <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
               <Clock className="size-3.5 text-muted-foreground" />

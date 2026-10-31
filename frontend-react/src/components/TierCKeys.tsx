@@ -171,10 +171,10 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
   return (
     <div className="space-y-4">
       {/* Key Config Card */}
-      <div className="border border-border rounded-lg p-5 surface-inset shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="border border-border rounded-lg p-4 sm:p-5 surface-inset shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold text-base">Bring Your Own LLM Key</h3>
-          <span className="text-xs font-mono bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full">
+          <span className="text-[11px] sm:text-xs font-mono bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full">
             Owner tokens skipped
           </span>
         </div>
@@ -272,7 +272,7 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
         {/* Key Input & Verification */}
         <div className="space-y-1.5">
           <label className="text-xs font-semibold block">API Secret Key</label>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="relative flex-1">
               <input
                 type={showKey ? 'text' : 'password'}
@@ -295,7 +295,7 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
               size="sm"
               onClick={handleTestKey}
               disabled={isTesting || !key.trim() || testResult?.success === true}
-              className={`h-9 min-w-[5.5rem] gap-1.5 shrink-0 ${
+              className={`h-11 w-full sm:h-9 sm:w-auto sm:min-w-[5.5rem] gap-1.5 shrink-0 ${
                 testResult?.success
                   ? 'text-emerald-600 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/10 hover:text-emerald-600'
                   : ''

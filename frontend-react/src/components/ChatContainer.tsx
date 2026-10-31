@@ -40,6 +40,8 @@ interface ChatContainerProps {
   usage?: UsageInfo | null;
   hasVisitorKey?: boolean;
   onOpenLimits?: () => void;
+  compact?: boolean;
+  onShowContext?: () => void;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -80,6 +82,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   usage = null,
   hasVisitorKey = false,
   onOpenLimits,
+  compact = false,
+  onShowContext,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -292,7 +296,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   return (
     <div className="relative flex flex-col h-full flex-1 surface-panel overflow-hidden">
       {/* Chat Header stays clickable so remaining quota / TTL is always reachable */}
-      <div className="h-16 px-4 border-b border-border surface-header flex items-center justify-between gap-3 text-xs shrink-0 z-10">
+      <div className={compact ? 'hidden' : 'h-16 px-4 border-b border-border surface-header flex items-center justify-between gap-3 text-xs shrink-0 z-10'}>
         <div className="flex items-center gap-2.5 min-w-0">
           {onOpenMobileMenu && (
             <Button
@@ -360,10 +364,21 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 type="button"
                 variant="outline"
                 onClick={onGoToUpload}
-                className="mt-1 h-9 gap-1.5 text-xs"
+                className="mt-1 h-11 gap-1.5 text-xs sm:h-9"
               >
                 <UploadCloud className="size-3.5" />
                 Go to Upload Documents
+              </Button>
+            )}
+            {!isProcessing && compact && activeNav === 'tier_b' && onShowContext && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onShowContext}
+                className="mt-1 h-11 gap-1.5 text-xs"
+              >
+                <UploadCloud className="size-3.5" />
+                Upload a PDF
               </Button>
             )}
           </div>
@@ -400,6 +415,16 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             <h4 className="font-medium text-sm text-muted-foreground tracking-tight">
               What do you want to know?
             </h4>
+            {compact && onShowContext && !isLocked && !isProcessing && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onShowContext}
+                className="mt-1 h-11 px-4 text-xs"
+              >
+                {activeNav === 'tier_b' ? 'Back to your document' : 'Browse sample questions'}
+              </Button>
+            )}
             {usage && (
               <p className="text-[11px] text-muted-foreground/80 font-mono">
                 {remainingQuestions} of {hasVisitorKey ? quota.ownMax : quota.ownerMax} questions
@@ -415,7 +440,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             {msg.role === 'user' ? (
               /* User Chat Bubble - sized neatly based on input content */
               <div className="flex flex-col items-end w-full group my-1">
-                <div className="w-fit max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-xs px-4 py-2.5 bg-primary text-primary-foreground shadow-xs text-[13.5px] leading-relaxed break-words font-normal">
+                <div className="w-fit max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-xs px-4 py-2.5 bg-primary text-primary-foreground shadow-xs text-[13.5px] leading-relaxed break-words font-normal select-text">
                   {msg.content}
                 </div>
                 <span className="text-[10px] text-muted-foreground/60 px-1 pt-1 font-mono">
@@ -456,7 +481,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 )}
 
                 {/* Message Content: Borderless typography rendered directly */}
-                <div className="w-full text-[14px] leading-relaxed text-foreground pl-0.5">
+                <div className="w-full text-[14px] leading-relaxed text-foreground pl-0.5 select-text break-words">
                   <MarkdownMessage
                     content={msg.content}
                     sources={msg.sources}
@@ -587,15 +612,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               disabled={isInputDisabled}
               placeholder={getPlaceholder()}
               autoComplete="off"
-              className={`w-full h-10 ${
+              enterKeyHint="send"
+              className={`w-full h-11 lg:h-10 ${
                 isLocked || isProcessing || isQuotaLocked ? 'pl-9 pr-3.5' : 'px-3.5'
-              } rounded-lg border border-border bg-background/60 focus:bg-background text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed placeholder:text-muted-foreground/70`}
+              } rounded-lg border border-border bg-background/60 focus:bg-background text-base lg:text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed placeholder:text-muted-foreground/70`}
             />
           </div>
           <Button
             onClick={() => handleSend()}
             disabled={isInputDisabled || !input.trim()}
-            className="gap-1.5 h-10 px-4 rounded-lg text-sm font-medium shadow-sm shrink-0"
+            className="gap-1.5 h-11 lg:h-10 px-4 rounded-lg text-sm font-medium shadow-sm shrink-0"
+            aria-label="Send"
           >
             {isProcessing ? (
               <>

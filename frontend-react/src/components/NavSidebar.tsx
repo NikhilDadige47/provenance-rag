@@ -60,8 +60,8 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
 
   return (
     <aside
-      className={`border-r border-border surface-panel flex flex-col h-full shrink-0 transition-[width] duration-200 ease-out select-none relative ${
-        isCollapsed ? 'w-[72px]' : 'w-56'
+      className={`hidden lg:flex border-r border-border surface-panel flex-col h-full shrink-0 transition-[width] duration-200 ease-out select-none relative ${
+        isCollapsed ? 'lg:w-[72px]' : 'lg:w-56'
       }`}
     >
       {/* Brand Header */}

@@ -77,7 +77,7 @@ export const SourcesDropdown: React.FC<SourcesDropdownProps> = ({
         <button
           type="button"
           onClick={() => setIsDropdownOpen((prev) => !prev)}
-          className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-xs font-medium bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/60 transition-all cursor-pointer select-none group shadow-2xs"
+          className="inline-flex min-h-10 items-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-medium bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/60 transition-all cursor-pointer select-none group shadow-2xs"
           title={isDropdownOpen ? 'Hide sources' : 'Show sources'}
         >
           <BookOpen className="size-3.5 text-primary/80" />
@@ -113,7 +113,7 @@ export const SourcesDropdown: React.FC<SourcesDropdownProps> = ({
                     id={`source-btn-${cIndex}`}
                     type="button"
                     onClick={() => onSelectSource?.(src)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
+                    className={`inline-flex min-h-10 max-w-full items-center gap-1.5 px-2.5 py-2 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
                       isActive
                         ? 'bg-primary/10 border-primary/30 text-primary shadow-xs'
                         : 'bg-muted/30 hover:bg-muted/70 border-border/60 text-muted-foreground hover:text-foreground'
@@ -126,7 +126,7 @@ export const SourcesDropdown: React.FC<SourcesDropdownProps> = ({
                     >
                       [{cIndex}]
                     </span>
-                    <span className="truncate max-w-[160px] sm:max-w-[220px]">{sourceLabel(src)}</span>
+                    <span className="truncate max-w-[9rem] sm:max-w-[220px]">{sourceLabel(src)}</span>
                     {src.page > 1 && (
                       <span className="text-[10px] font-mono text-muted-foreground">p.{src.page}</span>
                     )}

@@ -42,8 +42,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         Skip to how you can use it
       </a>
 
-      <header className="sticky top-0 z-40 border-b border-border/80 surface-header backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
+      <header className="sticky top-0 z-40 border-b border-border/80 surface-header backdrop-blur-md pt-[env(safe-area-inset-top)]">
+        <div className="mx-auto flex h-14 sm:h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-8">
           <div className="flex items-center gap-2 min-w-0">
             <img src={logoImg} alt="" className="size-11 rounded-lg object-contain shrink-0" />
             <div className="min-w-0">
@@ -72,7 +72,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               size="icon"
               onClick={onToggleTheme}
               aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-              className="size-9"
+              className="size-10 sm:size-9 shrink-0"
             >
               {theme === 'light' ? <Moon className="size-4" /> : <Sun className="size-4" />}
             </Button>
@@ -85,10 +85,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
       <main>
         <section className="flex min-h-[calc(100svh-4rem)] items-center">
-          <div className="mx-auto grid w-full max-w-6xl gap-10 px-5 py-10 sm:px-8 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:items-center md:gap-12">
-            <div className="space-y-6">
+          <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-8 sm:gap-10 sm:px-8 sm:py-10 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:items-center md:gap-12">
+            <div className="space-y-5 sm:space-y-6">
               <h1
-                className="text-[2.15rem] font-bold leading-[1.12] tracking-tight text-foreground sm:text-5xl"
+                className="text-balance text-[1.85rem] font-bold leading-[1.12] tracking-tight text-foreground min-[380px]:text-[2.15rem] sm:text-5xl"
                 style={{ fontFamily: "'Poppins', sans-serif" }}
               >
                 Ask a filing.
@@ -101,11 +101,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 your own PDF when you are ready.
               </p>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button size="lg" onClick={onTryDemo} className="gap-2">
+                <Button size="lg" onClick={onTryDemo} className="w-full gap-2 sm:w-auto">
                   Try the demo
                   <ArrowRight className="size-4" />
                 </Button>
-                <Button size="lg" variant="outline" onClick={onUpload} className="gap-2">
+                <Button size="lg" variant="outline" onClick={onUpload} className="w-full gap-2 sm:w-auto">
                   <UploadCloud className="size-4" />
                   Upload a PDF
                 </Button>
@@ -116,7 +116,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </p>
             </div>
 
-            <div className="relative h-full min-h-[22rem] lg:min-h-[26rem]">
+            <div className="relative h-full min-h-[18rem] sm:min-h-[22rem] lg:min-h-[26rem]">
               <DemoStatusBadge />
               <div aria-hidden="true" className="h-full">
                 <WorkspacePreview />
@@ -126,7 +126,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </section>
 
         <section id="paths" className="scroll-mt-20 border-t border-border/80">
-          <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-12">
+          <div className="mx-auto max-w-6xl px-4 py-10 sm:px-8 sm:py-12">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -188,7 +188,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </section>
 
         <section id="guards" className="scroll-mt-20 border-t border-border/80 bg-card/30">
-          <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-12">
+          <div className="mx-auto max-w-6xl px-4 py-10 sm:px-8 sm:py-12">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -280,7 +280,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       </main>
 
       <footer className="border-t border-border surface-footer">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-8 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8">
           <p>Provenance RAG · hybrid access · citations required</p>
           <div className="flex flex-wrap items-center gap-4">
             <button
@@ -381,7 +381,7 @@ function LimitStat({ value, label }: { value: string; label: string }) {
 
 function DemoStatusBadge() {
   return (
-    <p className="absolute -top-3 left-3 z-10 inline-flex items-center gap-2 rounded-md border border-emerald-500/25 bg-background/95 px-2.5 py-1 text-[11px] shadow-sm backdrop-blur-md">
+    <p className="absolute -top-3 left-3 z-10 inline-flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-emerald-500/25 bg-background/95 px-2.5 py-1 text-[11px] shadow-sm backdrop-blur-md">
       <span className="relative flex size-1.5 shrink-0" aria-hidden="true">
         <span className="absolute inset-0 rounded-full bg-emerald-500/70 animate-ping" />
         <span className="relative size-1.5 rounded-full bg-emerald-500" />
@@ -489,7 +489,7 @@ function WorkspacePreview() {
           {phase === 'trace' ? 'Tracing…' : phase === 'source' ? 'Cited' : 'Copilot'}
         </span>
       </div>
-      <div className="grid min-h-[280px] flex-1 grid-cols-[72px_1fr] sm:grid-cols-[88px_minmax(0,0.85fr)_minmax(0,1.15fr)]">
+      <div className="grid min-h-[16rem] flex-1 grid-cols-[2.5rem_minmax(0,1fr)] sm:min-h-[280px] sm:grid-cols-[88px_minmax(0,0.85fr)_minmax(0,1.15fr)]">
         <div className="border-r border-border p-2 space-y-1.5 surface-panel">
           <div className="h-7 rounded-md bg-primary" />
           <div className="h-7 rounded-md bg-muted" />
@@ -517,7 +517,7 @@ function WorkspacePreview() {
             </div>
           </div>
         </div>
-        <div className="relative p-3 space-y-2.5 overflow-hidden">
+        <div className="relative min-w-0 p-3 space-y-2.5 overflow-hidden">
           {asked && (
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 animate-in fade-in slide-in-from-bottom-1 duration-300">
               <p className="text-[10px] text-muted-foreground">You</p>

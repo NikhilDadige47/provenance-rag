@@ -104,7 +104,7 @@ export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) 
     <AnimatePresence>
       {doc && (
         <div
-          className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6"
+          className="fixed inset-0 z-[200] flex items-stretch justify-center p-0 sm:items-center sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-label={doc.title}
@@ -126,10 +126,10 @@ export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) 
             className={`relative z-10 flex flex-col overflow-hidden bg-card border border-border shadow-2xl ${
               expanded
                 ? 'w-full h-full max-w-none rounded-none'
-                : 'w-full max-w-4xl h-[90vh] rounded-xl'
+                : 'h-[100dvh] w-full max-w-4xl rounded-none sm:h-[90vh] sm:rounded-xl'
             }`}
           >
-            <header className="h-12 px-3 sm:px-4 border-b border-border surface-header flex items-center justify-between gap-2 shrink-0">
+            <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-border surface-header px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 sm:px-4 sm:py-2">
               <div className="flex items-center gap-2 min-w-0">
                 <FileText className="size-4 text-primary shrink-0" />
                 <div className="min-w-0">
@@ -144,7 +144,7 @@ export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) 
                 <button
                   type="button"
                   onClick={() => setExpanded((v) => !v)}
-                  className="size-8 rounded-full bg-background hover:bg-muted border border-border text-foreground flex items-center justify-center transition-colors cursor-pointer"
+                  className="hidden sm:flex size-8 rounded-full bg-background hover:bg-muted border border-border text-foreground items-center justify-center transition-colors cursor-pointer"
                   title={expanded ? 'Exit full screen' : 'Expand'}
                   aria-label={expanded ? 'Exit full screen' : 'Expand preview'}
                 >
@@ -153,7 +153,7 @@ export const DocViewerModal: React.FC<DocViewerModalProps> = ({ doc, onClose }) 
                 <button
                   type="button"
                   onClick={onClose}
-                  className="size-8 rounded-full bg-background hover:bg-muted border border-border text-foreground flex items-center justify-center transition-colors cursor-pointer"
+                  className="size-10 sm:size-8 rounded-full bg-background hover:bg-muted border border-border text-foreground flex items-center justify-center transition-colors cursor-pointer"
                   title="Close"
                   aria-label="Close preview"
                 >
