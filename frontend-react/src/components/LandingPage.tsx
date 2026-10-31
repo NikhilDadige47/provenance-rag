@@ -53,16 +53,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               >
                 Provenance RAG
               </p>
-              <p className="hidden text-[11px] text-muted-foreground sm:block">Cited answers. Capped spend.</p>
+              <p className="hidden text-[11px] text-muted-foreground sm:block">Answers you can check.</p>
             </div>
           </div>
 
           <nav className="hidden items-center gap-6 text-xs font-medium text-muted-foreground md:flex">
             <a href="#paths" className="hover:text-foreground transition-colors">
-              Paths
+              How to use it
             </a>
             <a href="#guards" className="hover:text-foreground transition-colors">
-              Guards &amp; limits
+              Limits
             </a>
           </nav>
 
@@ -91,14 +91,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 className="text-balance text-[1.85rem] font-bold leading-[1.12] tracking-tight text-foreground min-[380px]:text-[2.15rem] sm:text-5xl"
                 style={{ fontFamily: "'Poppins', sans-serif" }}
               >
-                Ask a filing.
+                Ask a document.
                 <br />
-                Get an answer you can trace.
+                See the page it came from.
               </h1>
               <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
-                A three-path retrieval system with owner spend caps, isolated sessions, and
-                citations — or a refusal. Start on the demo 10-Ks with nothing to paste. Upload
-                your own PDF when you are ready.
+                Ask the pre-stored files, or upload your own PDF. The answer points to the page
+                it came from. If the document does not say it, you get a clear no.
               </p>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Button size="lg" onClick={onTryDemo} className="w-full gap-2 sm:w-auto">
@@ -111,8 +110,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                No keys required for the demo. Owner-funded answers are capped at{' '}
-                {ALLOWANCE_DEFAULTS.ownerQuestions} per day on this connection.
+                No account. {ALLOWANCE_DEFAULTS.ownerQuestions} free answers a day.
               </p>
             </div>
 
@@ -130,57 +128,47 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Three paths
+                  How to use it
                 </p>
                 <h2
                   className="mt-1 text-xl font-bold tracking-tight sm:text-2xl"
                   style={{ fontFamily: "'Poppins', sans-serif" }}
                 >
-                  Nothing to paste, your PDF, or your LLM key.
+                  Three ways in.
                 </h2>
+                <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
+                  Use the pre-stored files, bring a PDF, or add your own AI key.
+                </p>
               </div>
-              <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-                Embeddings and rerank stay on the owner Cohere key. You only bring a parser or
-                an LLM key if you want to.
-              </p>
             </div>
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               <PathCard
-                kicker="A · Demo"
-                title="Ask Apple 10-Ks"
+                kicker="1 · Start here"
+                title="Pre-stored files"
                 icon={Eye}
-                lines={[
-                  'You bring nothing',
-                  'Cited answers on the pre-indexed corpus',
-                  'Owner pays embed, rerank, and answers',
-                ]}
-                cta="Open the corpus"
+                lines={['Nothing to set up.', 'Ask the documents already here.']}
+                cta="Try the demo"
                 onClick={onTryDemo}
                 emphasized
               />
               <PathCard
-                kicker="B · Upload"
-                title="Your document"
+                kicker="2 · Your file"
+                title="Upload a PDF"
                 icon={UploadCloud}
                 lines={[
-                  `${ALLOWANCE_DEFAULTS.docs} PDFs · ${ALLOWANCE_DEFAULTS.pages} pages, isolated to this session`,
-                  'Parse, index, then ask — never mixed into the demo corpus',
-                  'Owner pays embed, rerank, and answers within caps',
+                  `Up to ${ALLOWANCE_DEFAULTS.docs} PDFs and ${ALLOWANCE_DEFAULTS.pages} pages.`,
+                  'Kept separate from the pre-stored files.',
                 ]}
                 cta="Upload a PDF"
                 onClick={onUpload}
               />
               <PathCard
-                kicker="C · BYOK"
-                title="Your LLM key"
+                kicker="3 · Optional"
+                title="Your AI key"
                 icon={KeyRound}
-                lines={[
-                  'Groq, OpenAI, or Anthropic — in RAM only, never disk or logs',
-                  `${ALLOWANCE_DEFAULTS.ownQuestions} questions on your model`,
-                  'Owner pays embed and rerank only',
-                ]}
-                cta="Paste a key on upload"
+                lines={['Optional. Groq, OpenAI, or Anthropic.', 'Used for that question, then removed.']}
+                cta="Add a key"
                 onClick={onUpload}
               />
             </div>
@@ -192,52 +180,51 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Guards &amp; limits
+                  Good to know
                 </p>
                 <h2
                   className="mt-1 text-xl font-bold tracking-tight sm:text-2xl"
                   style={{ fontFamily: "'Poppins', sans-serif" }}
                 >
-                  A public demo that cannot quietly drain a wallet or leak a key.
+                  The limits.
                 </h2>
+                <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
+                  The same numbers you will see inside. If the document does not answer, it says so.
+                </p>
               </div>
-              <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-                Same numbers the workspace meter uses. Scope is derived on the server. Weak
-                retrieval is refused, not dressed up.
-              </p>
             </div>
 
             <div className="mt-6 grid gap-3 lg:grid-cols-[1.05fr_0.95fr]">
               <ul className="grid gap-2 sm:grid-cols-2">
                 <GuardChip
                   icon={Eye}
-                  title="No keys to start"
-                  body="Judge retrieval on Apple 10-Ks before you upload."
+                  title="Nothing to set up"
+                  body="Start with the pre-stored files. No account."
                 />
                 <GuardChip
                   icon={FileText}
-                  title="Cited, or it refuses"
-                  body="Not-found gate runs before the LLM. Generation must cite."
+                  title="Shows the source"
+                  body="The answer points to the page, or says it doesn’t know."
                 />
                 <GuardChip
                   icon={Timer}
-                  title="Two-hour TTL wipe"
-                  body="Vectors, SQL, and parses go on expiry, tab close, or delete."
+                  title="Gone in two hours"
+                  body="Uploads are deleted when the time is up, or when you delete them."
                 />
                 <GuardChip
                   icon={Unplug}
-                  title="Uploads stay isolated"
-                  body="Your PDF never joins the demo. No visitor URL, so no SSRF."
+                  title="Kept separate"
+                  body="Your PDF is never mixed into the pre-stored files."
                 />
                 <GuardChip
                   icon={Shield}
-                  title="Caps before the call"
-                  body="Session, IP, daily jobs, and a kill switch. Budget gone → it says so."
+                  title="Limits first"
+                  body="Questions and uploads are capped. It tells you when you hit one."
                 />
                 <GuardChip
                   icon={KeyRound}
-                  title="Keys are not state"
-                  body="Parser key for the job, LLM key for the request. Then shredded."
+                  title="Keys aren’t saved"
+                  body="A pasted key is used for that step only, then removed."
                 />
               </ul>
 
@@ -245,26 +232,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3">
                   <LimitStat
                     value={`${ALLOWANCE_DEFAULTS.ownerQuestions}/day`}
-                    label="Owner answers / connection"
+                    label="Free answers today"
                   />
                   <LimitStat
                     value={`${ALLOWANCE_DEFAULTS.ownQuestions}`}
-                    label="Your-key answers / session"
+                    label="Answers with your key"
                   />
                   <LimitStat
                     value={`${ALLOWANCE_DEFAULTS.docs} · ${ALLOWANCE_DEFAULTS.pages}`}
-                    label="Docs · pages"
+                    label="PDFs · pages"
                   />
                   <LimitStat
                     value={`${ALLOWANCE_DEFAULTS.requestsPerMinute}/min`}
-                    label="Requests / IP"
+                    label="Questions a minute"
                   />
-                  <LimitStat value="10/day" label="Uploads / IP" />
-                  <LimitStat value="2h" label="Then wipe" />
+                  <LimitStat value="10/day" label="Uploads a day" />
+                  <LimitStat value="2h" label="Then deleted" />
                 </div>
                 <p className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-                  Pasted parser or LLM keys transit this host in memory for that job or request.
-                  The demo corpus needs no key.{' '}
+                  A pasted key is not saved. The pre-stored files need no key.{' '}
                   <button
                     type="button"
                     onClick={() => setTermsOpen(true)}
@@ -281,7 +267,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
       <footer className="border-t border-border surface-footer">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <p>Provenance RAG · hybrid access · citations required</p>
+          <p>Provenance RAG</p>
           <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
@@ -291,7 +277,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Terms &amp; privacy
             </button>
             <button type="button" onClick={onTryDemo} className="hover:text-foreground text-left">
-              Open workspace
+              Try the demo
             </button>
           </div>
         </div>
