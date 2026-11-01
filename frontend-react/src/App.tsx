@@ -51,8 +51,8 @@ function writeHash(surface: Surface, entry: Entry = 'demo') {
 
 export function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const saved = localStorage.getItem('provenance_theme_v2');
-    return (saved as 'light' | 'dark') || 'dark';
+    const saved = localStorage.getItem('provenance_theme_v3');
+    return saved === 'dark' ? 'dark' : 'light';
   });
   const [surface, setSurface] = useState<Surface>(() => readHash().surface);
   const [activeNav, setActiveNav] = useState<NavItem>(
@@ -138,7 +138,7 @@ export function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    localStorage.setItem('provenance_theme_v2', theme);
+    localStorage.setItem('provenance_theme_v3', theme);
     localStorage.setItem('provenance_theme', theme);
   }, [theme]);
 
