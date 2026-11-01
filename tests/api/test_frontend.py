@@ -51,6 +51,10 @@ def test_api_routes_not_shadowed(client: TestClient) -> None:
     assert health["status"] == "ok"
     assert health["version"] == "1.0.0"
 
+    res_ping = client.get("/ping")
+    assert res_ping.status_code == 200
+    assert res_ping.json() == {"status": "ok"}
+
     # Examples endpoint
     res_examples = client.get("/examples")
     assert res_examples.status_code == 200

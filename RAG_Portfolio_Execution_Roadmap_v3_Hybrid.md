@@ -709,35 +709,35 @@ Priority: **P0** · Complexity: **Medium**
 ## Checklist
 
 ☐ **P11-T1 🔴 README** (P0) · *Depends on: P7-T4, P10-T6*
-  ☐ [45m] Pitch, live demo link and **demo video/GIF at the top**
-  ☐ [30m] Explain the three tiers and what each requires
-  ☐ [30m] Architecture diagram
-  ☐ [45m] "Why these choices": hybrid access, BYOK limited to parser + LLM, Cohere for embed + rerank, quality gate, recursive + parent-child, hybrid search
-  ☐ [45m] **"Bring your own key" guide** for parser and LLM (where to get keys, suggested limited permissions)
-  ☐ [45m] Ablation table with your own numbers (plus optional parser comparison)
-  ☐ [45m] **Privacy and key-handling note:** what goes where, what is stored (nothing about keys), how to delete everything
-  ☐ [30m] Trace screenshot, latency and cost summary
-  ☐ [30m] Example questions including "not found"
-  ☐ [30m] Honest limitations (keys transit the server; owner caps may show "at capacity"; embedding model change requires re-indexing)
-  ☐ [30m] Production roadmap table
+  ☐ [45m] Pitch, live demo link and **demo video/GIF at the top** — pitch is in `README.md`; no live URL or video file is in the repo yet
+  ☑ [30m] Explain the three tiers and what each requires
+  ☑ [30m] Architecture diagram
+  ☑ [45m] "Why these choices": hybrid access, BYOK limited to parser + LLM, Cohere for embed + rerank, quality gate, recursive + parent-child, hybrid search
+  ☑ [45m] **"Bring your own key" guide** for parser and LLM (where to get keys, suggested limited permissions)
+  ☑ [45m] Ablation table with your own numbers (parser comparison left blank: it was not measured)
+  ☑ [45m] **Privacy and key-handling note:** what goes where, what is stored (nothing about keys), how to delete everything
+  ☐ [30m] Trace screenshot, latency and cost summary — latency and cost are in the README; no trace screenshot
+  ☑ [30m] Example questions including "not found"
+  ☑ [30m] Honest limitations (keys transit the server; owner caps may show "at capacity"; embedding model change requires re-indexing)
+  ☑ [30m] Production roadmap table
 
 ☐ **P11-T2 🔴 Demo video** (P0) · *Depends on: P10-T6*
-  ☐ [45m] Script (60-90 seconds): Tier A question → upload with local parser → sources → usage meter
+  ☑ [45m] Script (60-90 seconds): Tier A question → upload with local parser → sources → usage meter (`docs/DEMO_SCRIPT.md`)
   ☐ [60m] Record, trim, add captions; export GIF + video
   ☐ [15m] Embed at the top of the README and portfolio page
 
 ☐ **P11-T3 Repo hygiene** (P1) · *Depends on: P11-T1*
-  ☐ [30m] Remove dead code and TODOs; confirm no secrets in git history
+  ☐ [30m] Remove dead code and TODOs; confirm no secrets in git history — no TODOs under `src/`; history was not rewritten
   ☐ [30m] Test setup from scratch on a clean machine
-  ☐ [30m] Tag `v1.0.0`, add CHANGELOG
+  ☐ [30m] Tag `v1.0.0`, add CHANGELOG — `CHANGELOG.md` added; tag not created
 
 ☐ **P11-T4 Launch** (P1) · *Depends on: P11-T1, P11-T2*
-  ☐ [45m] Short post: problem, approach, 2-3 numbers, link
+  ☑ [45m] Short post: problem, approach, 2-3 numbers, link — draft in `docs/LAUNCH.md`, not posted
   ☐ [30m] Add to portfolio, LinkedIn, pinned repos
-  ☐ [45m] Prepare a 2-minute walkthrough: why this tier model, how keys are protected, how owner spend is capped, how you evaluated
+  ☑ [45m] Prepare a 2-minute walkthrough: why this tier model, how keys are protected, how owner spend is capped, how you evaluated (`docs/LAUNCH.md`)
 
 ☐ **P11-T5 Post-launch watch** (P1) · *Depends on: P11-T4*
-  ☐ [30m] Check logs, error codes and spend daily for the first week
+  ☐ [30m] Check logs, error codes and spend daily for the first week — checklist in `docs/POST_LAUNCH.md`
   ☐ [30m] Adjust caps from real usage; triage feedback into a P1/P2 backlog
 
 Priority: **P0** · Complexity: **Low**

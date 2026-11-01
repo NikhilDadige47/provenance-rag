@@ -295,7 +295,10 @@ class HybridChunker(IChunker):
                     )
                 )
             else:
-                # Regular paragraph or heading block - accumulate in buffer
+                # Keep each child on the page its text came from. A buffer that
+                # starts on page 1 would otherwise stamp every later piece as page 1.
+                if paragraph_buffer and paragraph_buffer[-1].page != block.page:
+                    flush_paragraph_buffer()
                 paragraph_buffer.append(block)
 
         flush_paragraph_buffer()

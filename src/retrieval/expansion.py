@@ -126,7 +126,7 @@ class ContextExpander:
                         title=getattr(chunk, "title", "Document"),
                         breadcrumb=parent_record.get("breadcrumb")
                         or getattr(chunk, "breadcrumb", "Overview"),
-                        page=parent_record.get("page_start", getattr(chunk, "page", 1)),
+                        page=_citation_page(chunk, parent_record),
                         text=parent_text,
                         token_count=tokens_to_add,
                         is_parent_expanded=True,
@@ -162,7 +162,7 @@ class ContextExpander:
                 doc_id=getattr(chunk, "doc_id", "doc"),
                 title=getattr(chunk, "title", "Document"),
                 breadcrumb=getattr(chunk, "breadcrumb", "Overview"),
-                page=getattr(chunk, "page", getattr(chunk, "page_number", 1)),
+                page=_citation_page(chunk, None),
                 text=child_text,
                 token_count=tokens_to_add,
                 is_parent_expanded=False,
@@ -179,6 +179,24 @@ class ContextExpander:
             total_tokens=current_token_count,
             budget_exhausted=budget_exhausted,
         )
+
+
+def _citation_page(chunk: Any, parent_record: dict[str, Any] | None) -> int:
+    """Page the citation should show: the retrieved hit, not the parent's first page."""
+    child = int(getattr(chunk, "page", 0) or getattr(chunk, "page_number", 0) or 0)
+    start = int((parent_record or {}).get("page_start") or 0)
+    end = int((parent_record or {}).get("page_end") or 0)
+    if child > 0 and start > 0 and end >= start and start <= child <= end:
+        return child
+    if child > 1:
+        return child
+    if start > 1:
+        return start
+    if child > 0:
+        return child
+    if start > 0:
+        return start
+    return 1
 
 
 ParentContextExpander = ContextExpander

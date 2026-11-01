@@ -36,8 +36,40 @@ def test_context_expander_parent_retrieval():
     res = expander.expand([chunk], scope="demo")
     assert len(res.passages) == 1
     assert res.passages[0].is_parent_expanded is True
+    assert res.passages[0].page == 3
     assert "Full parent passage text" in res.passages[0].text
     mock_db.get_parent.assert_called_once_with("p1", scope="demo")
+
+
+def test_citation_page_uses_retrieved_chunk_not_parent_start():
+    """A parent that begins on page 1 must not relabel a later hit as page 1."""
+    mock_db = MagicMock()
+    mock_db.get_parent.return_value = {
+        "parent_id": "p1",
+        "doc_id": "d1",
+        "breadcrumb": "Financial Statements",
+        "text": "Consolidated statements spanning the front of the section through net sales.",
+        "token_count": 400,
+        "page_start": 1,
+        "page_end": 35,
+    }
+
+    expander = ContextExpander(db=mock_db, parent_expand_max=1200, context_budget=3500)
+    chunk = RetrievedChunk(
+        chunk_id="c35",
+        doc_id="d1",
+        parent_id="p1",
+        title="Annual Report",
+        breadcrumb="Financial Statements",
+        page=35,
+        bbox=None,
+        display_text="Net sales were $391,035 million.",
+        embedding_text="Net sales were $391,035 million.",
+        score=0.95,
+    )
+
+    res = expander.expand([chunk], scope="demo")
+    assert res.passages[0].page == 35
 
 
 def test_context_expander_deduplicates_same_parent():

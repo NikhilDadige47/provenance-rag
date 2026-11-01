@@ -210,7 +210,7 @@ def _reject_insecure_production(request: Request) -> JSONResponse | None:
     env = (getattr(cfg, "app_env", "development") or "development").lower()
     if env != "production":
         return None
-    if request.url.path == "/health":
+    if request.url.path in {"/health", "/ping"}:
         return None
     if _request_is_https(request):
         return None
@@ -412,6 +412,12 @@ async def health_check(request: Request) -> HealthResponse | JSONResponse:
             content=payload.model_dump(),
         )
     return payload
+
+
+@app.get("/ping", tags=["system"])
+async def ping() -> dict[str, str]:
+    """Keep-alive for uptime pings. Does not touch the database, Qdrant, or any model."""
+    return {"status": "ok"}
 
 
 @app.get("/metrics", tags=["system"])
