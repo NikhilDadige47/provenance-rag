@@ -549,6 +549,7 @@ export function App() {
           documents={documents}
           onRequestDelete={() => setShowDeleteModal(true)}
           onToast={addToast}
+          llmConfig={visitorLlm}
           onKeyConfigChange={(cfg: LLMConfig | null) => {
             api.setVisitorKeys(cfg);
             setVisitorLlm(cfg);

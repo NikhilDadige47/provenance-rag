@@ -183,10 +183,29 @@ class ContextExpander:
 
 def _citation_page(chunk: Any, parent_record: dict[str, Any] | None) -> int:
     """Page the citation should show: the retrieved hit, not the parent's first page."""
-    child = int(getattr(chunk, "page", 0) or getattr(chunk, "page_number", 0) or 0)
+    child = 0
+    raw_child = getattr(chunk, "page", None) or getattr(chunk, "page_number", None)
+    if raw_child is not None:
+        try:
+            child = max(1, int(raw_child))
+        except (TypeError, ValueError):
+            child = 0
+
+    if child <= 1 and hasattr(chunk, "metadata") and isinstance(chunk.metadata, dict):
+        raw_meta = (
+            chunk.metadata.get("page")
+            or chunk.metadata.get("page_number")
+            or chunk.metadata.get("page_start")
+        )
+        if raw_meta:
+            try:
+                child = max(1, int(raw_meta))
+            except (TypeError, ValueError):
+                pass
+
     start = int((parent_record or {}).get("page_start") or 0)
     end = int((parent_record or {}).get("page_end") or 0)
-    if child > 0 and start > 0 and end >= start and start <= child <= end:
+    if child > 1 and start > 0 and end >= start and start <= child <= end:
         return child
     if child > 1:
         return child

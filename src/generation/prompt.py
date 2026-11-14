@@ -10,6 +10,7 @@ Implements roadmap P4-T5 & architecture §5, §9.2:
 import re
 
 from src.retrieval.expansion import ExpandedContextPassage
+from src.generation.profiles import ModelProfile, get_model_profile, _build_frontier_prompts
 
 MAX_QUESTION_LENGTH = 1000
 
@@ -66,16 +67,21 @@ def validate_question(question: str) -> tuple[bool, str | None]:
 def build_generation_prompt(
     question: str,
     passages: list[ExpandedContextPassage],
+    profile: ModelProfile | None = None,
 ) -> tuple[str, str]:
     """Construct the system prompt and numbered user context prompt.
 
     Args:
         question: User query.
         passages: Deduplicated expanded context passages from retrieval.
+        profile: Optional ModelProfile for dynamic capability adaptation.
 
     Returns:
         tuple of (system_prompt, user_prompt)
     """
+    if profile is not None:
+        return profile.build_prompts(question, passages)
+
     context_blocks: list[str] = []
 
     for idx, passage in enumerate(passages, start=1):
@@ -92,7 +98,10 @@ def build_generation_prompt(
 USER QUESTION:
 {question.strip()}
 
-Remember: Ground your response strictly in the numbered sources above, cite ONLY as [1] or [2] (never 【1†L1-L4】), and state 'I could not find the answer in the provided documents' if unsupported."""
+GROUNDING DIRECTIVE:
+1. Synthesize facts directly from the numbered sources above to answer the user question.
+2. Cite each fact using square brackets like [1] or [2] at the end of the sentence.
+3. Only state 'I could not find the answer in the provided documents.' if the context contains zero relevant facts to answer this question."""
 
     return SYSTEM_PROMPT, user_prompt
 

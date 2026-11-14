@@ -34,7 +34,8 @@ class LlamaParseNormalizer:
     """Normalizes raw Markdown output from LlamaParse into StructuredDoc blocks."""
 
     PAGE_MARKER_RE = re.compile(
-        r"(?:---\s*\[Page\s*(\d+)\]\s*---|<!--\s*page\s*(\d+)\s*-->|\f)", re.IGNORECASE
+        r"(?:---\s*\[?Page\s*(\d+)\]?\s*---|<!--\s*page(?:_number)?\s*(\d+)?\s*-->|<!--\s*pagebreak\s*-->|\f|\x0c)",
+        re.IGNORECASE,
     )
     HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
     TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
@@ -54,18 +55,25 @@ class LlamaParseNormalizer:
 
         while idx < total_lines:
             line = lines[idx]
-            stripped = line.strip()
+            has_form_feed = "\f" in line or "\x0c" in line
 
-            # 1. Check for page markers
-            page_match = cls.PAGE_MARKER_RE.search(stripped)
-            if page_match:
-                page_str = page_match.group(1) or page_match.group(2)
-                if page_str:
+            # 1. Check for page markers in raw line (before stripping \f)
+            page_match = cls.PAGE_MARKER_RE.search(line)
+            if page_match or has_form_feed:
+                page_str = (page_match.group(1) or page_match.group(2)) if page_match else None
+                if page_str and page_str.isdigit():
                     current_page = int(page_str)
                 else:
                     current_page += 1
-                idx += 1
-                continue
+
+                # Strip page marker from line
+                cleaned_line = cls.PAGE_MARKER_RE.sub("", line).strip()
+                if not cleaned_line:
+                    idx += 1
+                    continue
+                line = cleaned_line
+
+            stripped = line.strip()
 
             if not stripped:
                 idx += 1

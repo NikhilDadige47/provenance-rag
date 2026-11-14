@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bookmark, ChevronLeft, ChevronRight, FileText, X } from 'lucide-react';
 import { SourceCard } from '../types';
+import { RichSnippetViewer } from './RichSnippetViewer';
 
 interface SourceInspectorPanelProps {
   source: SourceCard | null;
@@ -87,11 +88,9 @@ export const SourceInspectorPanel: React.FC<SourceInspectorPanelProps> = ({
 
               <div
                 id={`source-card-${citation}`}
-                className="pl-3 py-2.5 border-l-2 border-primary/60 bg-muted/20 rounded-r-md"
+                className="pl-3 py-2.5 border-l-2 border-primary/60 bg-muted/20 rounded-r-md overflow-x-auto"
               >
-                <p className="text-foreground/90 text-[13px] leading-relaxed select-text whitespace-pre-wrap break-words">
-                  {source.snippet}
-                </p>
+                <RichSnippetViewer text={source.snippet} />
               </div>
             </div>
           </div>

@@ -133,6 +133,10 @@ class VisitorKeys(BaseModel):
     llm_model: str | None = Field(
         default=None, description="Specific model requested on the visitor key"
     )
+    llm_base_url: str | None = Field(
+        default=None,
+        description="Optional custom base URL for local/OpenAI-compatible models (e.g. Ollama)",
+    )
 
 
 def is_loopback_ip(client_ip: str) -> bool:

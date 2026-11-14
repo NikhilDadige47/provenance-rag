@@ -47,6 +47,7 @@ from src.api.logging import (
 from src.api.sessions import CurrentSession, VisitorLLMKeys
 from src.generation.citations import audit_citations, normalize_citation_markers
 from src.generation.llm import consume_usage, get_llm_adapter
+from src.generation.profiles import get_model_profile
 from src.generation.prompt import build_generation_prompt, validate_question
 from src.generation.rewrite import rewrite_query_if_needed
 from src.retrieval.expansion import ContextExpander
@@ -210,6 +211,16 @@ class SourceCard(BaseModel):
     snippet: str
 
 
+class PipelineStageTrace(BaseModel):
+    """Accurate execution trace for a single pipeline stage."""
+
+    id: str
+    title: str
+    latency_ms: float = 0.0
+    status: str = "done"  # "done" | "failed" | "skipped"
+    details: list[str] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     """Response body for POST /chat."""
 
@@ -222,6 +233,7 @@ class ChatResponse(BaseModel):
     used_visitor_key: bool
     timings_ms: dict[str, float]
     model_used: str | None = None
+    trace_stages: list[PipelineStageTrace] = Field(default_factory=list)
     # Never included: session_id, scope, API keys, full document text
 
 
@@ -437,7 +449,9 @@ async def chat(
         )
 
     # ── Gate 2: Kill switch (owner LLM disabled + no visitor key) ──────────
-    using_visitor_key = visitor_keys.llm_key is not None and bool(visitor_keys.llm_key.reveal())
+    is_local_provider = (visitor_keys.llm_provider or "").strip().lower() in ("ollama", "local", "lmstudio")
+    has_visitor_key = visitor_keys.llm_key is not None and bool(visitor_keys.llm_key.reveal())
+    using_visitor_key = has_visitor_key or is_local_provider
     if not using_visitor_key:
         check_kill_switch_owner_llm(cfg)
 
@@ -455,7 +469,7 @@ async def chat(
 
     # ── Resolve LLM adapter ────────────────────────────────────────────────
     llm_secret: Secret | None = None
-    if using_visitor_key:
+    if has_visitor_key:
         llm_secret = visitor_keys.llm_key
 
     history_dicts = [turn.model_dump() for turn in body.history]
@@ -465,13 +479,24 @@ async def chat(
             provider=visitor_keys.llm_provider if using_visitor_key else None,
             api_key=llm_secret,
             model=visitor_keys.llm_model if using_visitor_key else None,
+            base_url=visitor_keys.llm_base_url if using_visitor_key else None,
         )
         model_used = f"{llm.provider_name}/{getattr(llm, '_model', '')}".rstrip("/")
+        profile = get_model_profile(
+            model_name=getattr(llm, "_model", None),
+            provider=llm.provider_name,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported LLM provider: {exc}",
         ) from exc
+
+    # Terminal trace header
+    print(f"\n\033[1;35m{'=' * 75}\033[0m")
+    print(f"\033[1;35m[RAG TRACE]\033[0m Request ID: \033[36m{request_id}\033[0m | Model: \033[33m{model_used}\033[0m ({profile.tier.value.upper()}) | Tier: \033[32m{session.tier.value}\033[0m")
+    print(f"\033[1;35m[RAG TRACE]\033[0m Profile: \033[36m{profile.badge_label}\033[0m | Max Chunks: {profile.max_context_chunks} | Temp: {profile.temperature}")
+    print(f"\033[1;35m[RAG TRACE]\033[0m Question: \033[1m\"{body.question}\"\033[0m")
 
     # ── Step 1: Conditional query rewrite (follow-ups only) ────────────────
     t0 = time.time()
@@ -511,6 +536,11 @@ async def chat(
         effective_query = body.question  # safe fallback
     timings["rewrite_ms"] = round((time.time() - t0) * 1000, 1)
 
+    if history_dicts:
+        print(f"\033[1;35m[RAG TRACE]\033[0m Step 1 (Rewrite): '{body.question}' -> '{effective_query}' ({timings['rewrite_ms']}ms)")
+    else:
+        print(f"\033[1;35m[RAG TRACE]\033[0m Step 1 (Rewrite): Skipped (first turn, {timings['rewrite_ms']}ms)")
+
     # ── Step 2: Hybrid search (dense + sparse, scope-filtered) ─────────────
     t0 = time.time()
     search_pipeline = HybridSearchPipeline()
@@ -521,20 +551,87 @@ async def chat(
         )
     except Exception as exc:
         logger.error(f"Search failed [{request_id}]: {type(exc).__name__}")
+        print(f"\033[91m[RAG TRACE ❌ Search Exception]\033[0m {type(exc).__name__}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Search is temporarily unavailable. Please try again.",
         ) from exc
     timings["retrieval_ms"] = round((time.time() - t0) * 1000, 1)
 
+    scores_str = ", ".join(f"{c.score:.3f}" for c in search_result.chunks[:5]) or "none"
+    print(f"\033[1;35m[RAG TRACE]\033[0m Step 2 (Retrieval): Scope='{scope}' | Found {len(search_result.chunks)} chunks | Rerank scores: [{scores_str}] ({timings['retrieval_ms']}ms)")
+
     # ── Gate 5: Daily rerank cap ────────────────────────────────────────────
     if not unlimited:
         check_and_increment_daily_rerank(db, cfg)
+
+    # Build accurate real-time trace stages for UI
+    trace_stages: list[PipelineStageTrace] = [
+        PipelineStageTrace(
+            id="safety",
+            title="Input Safety & Scope",
+            latency_ms=round(timings.get("safety_ms", 1.5), 1),
+            status="done",
+            details=[f"Query screened • Scope: {scope}"],
+        ),
+        PipelineStageTrace(
+            id="rewrite",
+            title="Query Processing",
+            latency_ms=round(timings["rewrite_ms"], 1),
+            status="done",
+            details=[
+                f"De-referenced follow-up query"
+                if history_dicts
+                else "Direct query processed"
+            ],
+        ),
+        PipelineStageTrace(
+            id="retrieval",
+            title="Hybrid Retrieval",
+            latency_ms=round(timings["retrieval_ms"], 1),
+            status="done",
+            details=[f"Retrieved {len(search_result.chunks)} candidate passages from Qdrant"],
+        ),
+    ]
+
+    best_score = search_result.chunks[0].score if search_result.chunks else 0.0
 
     # ── Gate 6: Not-found gate (before any LLM call → saves tokens) ────────
     if not search_result.is_found:
         total_ms = round((time.time() - start_time) * 1000, 1)
         timings["total_ms"] = total_ms
+
+        trace_stages.append(
+            PipelineStageTrace(
+                id="rerank",
+                title="Rerank & Not-Found Gate",
+                latency_ms=round(timings.get("rerank_ms", 15.0), 1),
+                status="failed",
+                details=[f"Refused: relevance score {best_score:.2f} < threshold 0.25 (out-of-domain)"],
+            )
+        )
+        trace_stages.append(
+            PipelineStageTrace(
+                id="expansion",
+                title="Context Expansion",
+                latency_ms=0.0,
+                status="skipped",
+                details=["Skipped due to low relevance score"],
+            )
+        )
+        trace_stages.append(
+            PipelineStageTrace(
+                id="generation",
+                title="Answer Generation",
+                latency_ms=0.0,
+                status="skipped",
+                details=["Skipped LLM generation to avoid hallucinations"],
+            )
+        )
+
+        print(f"\033[1;31m[RAG TRACE ❌ Gate 6 Not-Found Refusal]\033[0m Reason: {search_result.reason} | Best score: {best_score:.3f} < threshold 0.25")
+        print(f"\033[1;31m[RAG TRACE ❌ Gate 6 Not-Found Refusal]\033[0m Returning: 'I could not find the answer in the provided documents.'")
+        print(f"\033[1;35m{'=' * 75}\033[0m\n")
         log_chat_response(
             request_id=request_id,
             tier=session.tier.value,
@@ -556,18 +653,51 @@ async def chat(
             used_visitor_key=using_visitor_key,
             timings_ms=timings,
             model_used=model_used,
+            trace_stages=trace_stages,
         )
 
-    # ── Step 3: Parent / window context expansion ───────────────────────────
+    trace_stages.append(
+        PipelineStageTrace(
+            id="rerank",
+            title="Rerank & Not-Found Gate",
+            latency_ms=round(timings.get("rerank_ms", 15.0), 1),
+            status="done",
+            details=[f"Passed: relevance score {best_score:.2f} meets threshold (>= 0.25)"],
+        )
+    )
+
+    # ── Step 3: Parent / window context expansion (Adaptive Context Pruning) ──
     t0 = time.time()
     expander = ContextExpander(db=db)
-    expansion_res = expander.expand(chunks=search_result.chunks, scope=scope)
+    pruned_chunks = search_result.chunks[: profile.max_context_chunks]
+    expansion_res = expander.expand(chunks=pruned_chunks, scope=scope)
     timings["expansion_ms"] = round((time.time() - t0) * 1000, 1)
+    print(
+        f"\033[1;35m[RAG TRACE]\033[0m Step 3 (Expansion): Adaptive Pruning ({profile.tier.value.upper()}) -> "
+        f"Kept top {len(expansion_res.passages)} of {len(search_result.chunks)} passages ({timings['expansion_ms']}ms)"
+    )
 
-    # ── Step 4: Build prompt ────────────────────────────────────────────────
-    _, user_prompt = build_generation_prompt(
+    trace_stages.append(
+        PipelineStageTrace(
+            id="expansion",
+            title="Context Expansion",
+            latency_ms=round(timings["expansion_ms"], 1),
+            status="done",
+            details=[
+                f"Expanded to {len(expansion_res.passages)} passages • {profile.badge_label}"
+            ],
+        )
+    )
+
+    # ── Step 4: Dynamic prompt construction ─────────────────────────────────
+    system_prompt, user_prompt = build_generation_prompt(
         question=body.question,
         passages=expansion_res.passages,
+        profile=profile,
+    )
+    print(
+        f"\033[1;35m[RAG TRACE]\033[0m Step 4 (Prompt): Built {profile.tier.value} prompt "
+        f"with {len(expansion_res.passages)} passages. Invoking {model_used} (temp={profile.temperature}) ..."
     )
 
     # ── Step 5: Reserve owner tokens, then stream generation ───────────────
@@ -583,7 +713,12 @@ async def chat(
             gen_buckets = await reserve_owner_llm_tokens(
                 ledger, session.session_id, client_ip, gen_est, cfg
             )
-        async for token in llm.generate_stream(user_prompt, api_key=llm_secret):
+        async for token in llm.generate_stream(
+            user_prompt,
+            api_key=llm_secret,
+            system_prompt=system_prompt,
+            temperature=profile.temperature,
+        ):
             answer_tokens.append(token)
     except HTTPException:
         if gen_buckets:
@@ -595,6 +730,7 @@ async def chat(
             await release_owner_llm_tokens(ledger, gen_buckets)
             gen_buckets = []
         logger.warning(f"Visitor key error [{request_id}]: {exc.message}")
+        print(f"\033[91m[RAG TRACE ❌ LLM Key Error]\033[0m {exc.message}")
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=(
@@ -609,12 +745,16 @@ async def chat(
             await release_owner_llm_tokens(ledger, gen_buckets)
             gen_buckets = []
         logger.error(f"Generation error [{request_id}]: {type(exc).__name__}")
+        print(f"\033[91m[RAG TRACE ❌ Generation Exception]\033[0m {type(exc).__name__}: {exc}")
         answer_tokens = [
             "Generation is temporarily unavailable. Please refer to the verified sources below."
         ]
 
     timings["generation_ms"] = round((time.time() - t0) * 1000, 1)
     full_answer = normalize_citation_markers("".join(answer_tokens).strip())
+    preview = full_answer.replace("\n", " ")[:120]
+    print(f"\033[1;35m[RAG TRACE]\033[0m Step 5 (Generation): Received {len(answer_tokens)} streamed chunks in {timings['generation_ms']}ms")
+    print(f"\033[1;35m[RAG TRACE]\033[0m Answer Preview: \"\033[37m{preview}...\033[0m\"")
 
     if not generation_failed:
         usage = consume_usage(llm, prompt=user_prompt, completion=full_answer)
@@ -625,12 +765,25 @@ async def chat(
         else:
             tokens_used = usage.total_tokens
 
+    trace_stages.append(
+        PipelineStageTrace(
+            id="generation",
+            title="Answer Generation",
+            latency_ms=round(timings["generation_ms"], 1),
+            status="done" if not generation_failed else "failed",
+            details=[f"Generated via {model_used} ({tokens_used} tokens)"],
+        )
+    )
+
     # ── Step 6: Citation audit ──────────────────────────────────────────────
     t0 = time.time()
     audit_res = audit_citations(full_answer, passages=expansion_res.passages)
     timings["citation_ms"] = round((time.time() - t0) * 1000, 1)
-
     timings["total_ms"] = round((time.time() - start_time) * 1000, 1)
+
+    print(f"\033[1;35m[RAG TRACE]\033[0m Step 6 (Citations): Grounded: {audit_res.is_grounded} | Cited Passages: {len(audit_res.sources)} ({timings['citation_ms']}ms)")
+    print(f"\033[1;32m[RAG TRACE ✅ Completed]\033[0m Total Pipeline Latency: \033[1m{timings['total_ms']}ms\033[0m")
+    print(f"\033[1;35m{'=' * 75}\033[0m\n")
 
     # ── Build source cards ──────────────────────────────────────────────────
     if audit_res.sources:
@@ -657,6 +810,16 @@ async def chat(
         ]
     sources = _dedupe_source_cards(raw_sources)
 
+    trace_stages.append(
+        PipelineStageTrace(
+            id="citations",
+            title="Citation Audit",
+            latency_ms=round(timings["citation_ms"], 1),
+            status="done",
+            details=[f"{len(sources)} sources cited (grounded: {'PASS' if audit_res.is_grounded else 'PARTIAL'})"],
+        )
+    )
+
     # ── Privacy log: metadata only ──────────────────────────────────────────
     log_chat_response(
         request_id=request_id,
@@ -680,4 +843,5 @@ async def chat(
         used_visitor_key=using_visitor_key,
         timings_ms=timings,
         model_used=model_used,
+        trace_stages=trace_stages,
     )

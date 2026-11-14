@@ -127,7 +127,7 @@ export const SourcesDropdown: React.FC<SourcesDropdownProps> = ({
                       [{cIndex}]
                     </span>
                     <span className="truncate max-w-[9rem] sm:max-w-[220px]">{sourceLabel(src)}</span>
-                    {src.page > 1 && (
+                    {src.page > 0 && (
                       <span className="text-[10px] font-mono text-muted-foreground">p.{src.page}</span>
                     )}
                   </button>

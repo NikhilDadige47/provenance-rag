@@ -15,6 +15,7 @@ interface SectionDetailsProps {
   documents: UploadedDoc[];
   onRequestDelete: () => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
+  llmConfig?: LLMConfig | null;
   onKeyConfigChange: (cfg: LLMConfig | null) => void;
   onAskExample: (q: string) => void;
   exampleChips?: ExampleQuestion[];
@@ -39,6 +40,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
   documents,
   onRequestDelete,
   onToast,
+  llmConfig = null,
   onKeyConfigChange,
   onAskExample,
   exampleChips = [],
@@ -150,7 +152,13 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
         )}
 
         {activeNav === 'tier_a' && (
-          <TierADemo onAskExample={onAskExample} exampleChips={exampleChips} />
+          <TierADemo
+            onAskExample={onAskExample}
+            exampleChips={exampleChips}
+            llmConfig={llmConfig}
+            onKeyConfigChange={onKeyConfigChange}
+            onToast={onToast}
+          />
         )}
 
         {activeNav === 'tier_b' && (
@@ -158,6 +166,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
             documents={documents}
             onRequestDelete={onRequestDelete}
             onToast={onToast}
+            llmConfig={llmConfig}
             onKeyConfigChange={onKeyConfigChange}
             onAskExample={onAskExample}
             onStartIngest={onStartIngest}

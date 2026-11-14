@@ -41,12 +41,16 @@ def is_ip_address(host: str) -> bool:
         return False
 
 
-def validate_egress_url(url: str, allow_local_qdrant: bool = True) -> str:
+def validate_egress_url(
+    url: str,
+    allow_local_qdrant: bool = True,
+    allow_local_llm: bool = False,
+) -> str:
     """Validate that the target URL belongs to an allowed provider host.
 
     Blocks:
     - Arbitrary unknown domains
-    - Loopback (127.0.0.1, ::1, localhost) unless specifically allowed for local Qdrant
+    - Loopback (127.0.0.1, ::1, localhost) unless specifically allowed for local Qdrant or local LLMs
     - Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
     - Cloud metadata services (169.254.169.254)
     """
@@ -57,8 +61,8 @@ def validate_egress_url(url: str, allow_local_qdrant: bool = True) -> str:
     if not host:
         raise EgressBlockedError(f"Missing hostname in URL: {url}")
 
-    # Local Qdrant exemption for dev/local testing
-    if allow_local_qdrant and host in {"localhost", "127.0.0.1"}:
+    # Local Qdrant / Local LLM (Ollama, LM Studio) exemption for dev/local testing
+    if (allow_local_qdrant or allow_local_llm) and host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
         return url
 
     # Require HTTPS for all external cloud egress
@@ -89,24 +93,44 @@ def validate_egress_url(url: str, allow_local_qdrant: bool = True) -> str:
 class SecureAsyncTransport(httpx.AsyncHTTPTransport):
     """Transport that verifies egress policy on every outgoing request."""
 
-    def __init__(self, allow_local_qdrant: bool = True, **kwargs: object) -> None:
+    def __init__(
+        self,
+        allow_local_qdrant: bool = True,
+        allow_local_llm: bool = False,
+        **kwargs: object,
+    ) -> None:
         super().__init__(**kwargs)
         self.allow_local_qdrant = allow_local_qdrant
+        self.allow_local_llm = allow_local_llm
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        validate_egress_url(str(request.url), allow_local_qdrant=self.allow_local_qdrant)
+        validate_egress_url(
+            str(request.url),
+            allow_local_qdrant=self.allow_local_qdrant,
+            allow_local_llm=self.allow_local_llm,
+        )
         return await super().handle_async_request(request)
 
 
 class SecureSyncTransport(httpx.HTTPTransport):
     """Sync transport that verifies egress policy on every outgoing request."""
 
-    def __init__(self, allow_local_qdrant: bool = True, **kwargs: object) -> None:
+    def __init__(
+        self,
+        allow_local_qdrant: bool = True,
+        allow_local_llm: bool = False,
+        **kwargs: object,
+    ) -> None:
         super().__init__(**kwargs)
         self.allow_local_qdrant = allow_local_qdrant
+        self.allow_local_llm = allow_local_llm
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        validate_egress_url(str(request.url), allow_local_qdrant=self.allow_local_qdrant)
+        validate_egress_url(
+            str(request.url),
+            allow_local_qdrant=self.allow_local_qdrant,
+            allow_local_llm=self.allow_local_llm,
+        )
         return super().handle_request(request)
 
 
@@ -116,24 +140,36 @@ class SecureHttpClient:
     DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0)
 
     @classmethod
-    def create_async_client(cls, allow_local_qdrant: bool = True) -> httpx.AsyncClient:
+    def create_async_client(
+        cls, allow_local_qdrant: bool = True, allow_local_llm: bool = False
+    ) -> httpx.AsyncClient:
         """Create an async HTTP client enforcing egress security."""
         return httpx.AsyncClient(
-            transport=SecureAsyncTransport(allow_local_qdrant=allow_local_qdrant),
+            transport=SecureAsyncTransport(
+                allow_local_qdrant=allow_local_qdrant, allow_local_llm=allow_local_llm
+            ),
             timeout=cls.DEFAULT_TIMEOUT,
             follow_redirects=False,  # Prevent open redirects
         )
 
     @classmethod
-    def create_sync_client(cls, allow_local_qdrant: bool = True) -> httpx.Client:
+    def create_sync_client(
+        cls, allow_local_qdrant: bool = True, allow_local_llm: bool = False
+    ) -> httpx.Client:
         """Create a sync HTTP client enforcing egress security."""
         return httpx.Client(
-            transport=SecureSyncTransport(allow_local_qdrant=allow_local_qdrant),
+            transport=SecureSyncTransport(
+                allow_local_qdrant=allow_local_qdrant, allow_local_llm=allow_local_llm
+            ),
             timeout=cls.DEFAULT_TIMEOUT,
             follow_redirects=False,
         )
 
 
-def create_secure_client(allow_local_qdrant: bool = True) -> httpx.AsyncClient:
+def create_secure_client(
+    allow_local_qdrant: bool = True, allow_local_llm: bool = False
+) -> httpx.AsyncClient:
     """Convenience helper to create an async secure client."""
-    return SecureHttpClient.create_async_client(allow_local_qdrant=allow_local_qdrant)
+    return SecureHttpClient.create_async_client(
+        allow_local_qdrant=allow_local_qdrant, allow_local_llm=allow_local_llm
+    )

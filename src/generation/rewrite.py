@@ -69,8 +69,36 @@ async def rewrite_query_if_needed(
             tokens.append(token)
 
         rewritten = "".join(tokens).strip().strip('"').strip("'")
+        for prefix in [
+            "STANDALONE QUESTION:",
+            "Standalone Question:",
+            "Standalone question:",
+            "Rewritten Question:",
+            "Rewritten question:",
+            "Here is the standalone question:",
+            "Here's the standalone question:",
+            "Question:",
+        ]:
+            if rewritten.startswith(prefix):
+                rewritten = rewritten[len(prefix):].strip().strip('"').strip("'")
+
+        # Discard conversational refusals from local models (e.g. "I could not find the answer...")
+        refusal_markers = [
+            "could not find",
+            "cannot find",
+            "i cannot",
+            "i do not know",
+            "no context",
+            "unsupported",
+            "as an ai",
+        ]
+        if any(marker in rewritten.lower() for marker in refusal_markers) or len(rewritten) > 300:
+            print(f"\033[93m[RAG TRACE ⚠️ Query Rewrite Discarded]\033[0m Model generated non-query text: '{rewritten[:60]}...'. Keeping original: '{clean_q}'")
+            return clean_q
+
         if rewritten and len(rewritten) >= 3:
             logger.info(f"Query rewritten: '{clean_q}' -> '{rewritten}'")
+            print(f"\033[92m[RAG TRACE]\033[0m Query rewritten: '{clean_q}' -> '{rewritten}'")
             return rewritten
 
     except Exception as exc:

@@ -18,7 +18,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.ingest_demo import DEMO_CORPUS_DIR, ingest_demo_document
+from scripts.ingest_demo import DEMO_CORPUS_DIR, ingest_demo_document, list_demo_pdfs
 from src.ingest.chunking.hybrid_chunker import HybridChunker
 from src.retrieval.embed import CohereEmbedder
 from src.retrieval.sparse import LocalSparseVectorizer
@@ -63,7 +63,7 @@ async def reembed_all() -> None:
         conn.commit()
 
     # 3. Re-ingest all documents in demo_corpus/
-    pdf_files = list(DEMO_CORPUS_DIR.glob("*.pdf"))
+    pdf_files = list_demo_pdfs(DEMO_CORPUS_DIR)
     if not pdf_files:
         logger.info(f"No PDFs found in {DEMO_CORPUS_DIR}. Place demo PDFs here to re-embed.")
         return

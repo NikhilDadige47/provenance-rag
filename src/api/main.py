@@ -510,23 +510,29 @@ async def create_session_endpoint(
 
 
 class ConnectionTestBody(BaseModel):
-    provider: str = Field(description="e.g. cohere, openai, groq, llamaparse")
-    key: str = Field(description="API key to validate (never stored)")
+    provider: str = Field(description="e.g. cohere, openai, groq, llamaparse, ollama")
+    key: str | None = Field(default="", description="API key to validate (never stored)")
+    base_url: str | None = Field(
+        default=None,
+        description="Custom base URL for local/OpenAI-compatible models (e.g. http://localhost:11434/v1)",
+    )
 
 
 @app.post(
     "/connections/test",
     tags=["connections"],
-    summary="Validate an API key",
+    summary="Validate an API key or local model endpoint",
     description=(
-        "Performs a cheap, credit-free validation call against the specified provider. "
+        "Performs a cheap, credit-free validation call against the specified provider or local endpoint. "
         "The key is held in memory only for this request and is never persisted."
     ),
 )
 async def test_connection(body: ConnectionTestBody) -> dict:
-    """Validate a provider API key without consuming paid credits."""
-    req = ConnectionTestRequest(provider=body.provider, key=Secret(body.key))
-    result = await verify_provider_connection(provider=req.provider, key=req.key)
+    """Validate a provider API key or local endpoint without consuming paid credits."""
+    sec_key = Secret(body.key) if body.key else None
+    result = await verify_provider_connection(
+        provider=body.provider, key=sec_key, base_url=body.base_url
+    )
     return result.model_dump()
 
 

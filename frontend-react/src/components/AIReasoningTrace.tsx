@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Check, Loader2, ChevronDown, Sparkles } from 'lucide-react';
+import { Check, AlertTriangle, Minus, Loader2, ChevronDown } from 'lucide-react';
 import { ShimmerText } from './ui/components-ai-thought-chain-utils/text-shimmer';
-import logoImg from '../assets/logo.png';
+import { PipelineStageTrace } from '../types';
 
 export interface AIReasoningTraceProps {
   isLoading?: boolean;
@@ -15,6 +15,7 @@ export interface AIReasoningTraceProps {
     rerank_ms?: number;
     expansion_ms?: number;
     generation_ms?: number;
+    citation_ms?: number;
   };
   sourcesCount?: number;
   isGrounded?: boolean;
@@ -23,93 +24,52 @@ export interface AIReasoningTraceProps {
   modelUsed?: string;
   scope?: string;
   defaultExpanded?: boolean;
+  traceStages?: PipelineStageTrace[];
 }
 
-interface StepDefinition {
+interface FallbackStep {
   id: string;
   title: string;
   loadingLabel: string;
-  latencyKey: keyof NonNullable<AIReasoningTraceProps['timings_ms']>;
-  fallbackLatency: number;
-  details: (props: AIReasoningTraceProps) => string[];
+  detail: string;
 }
 
-const PIPELINE_STEPS: StepDefinition[] = [
+const DEFAULT_LOADING_STEPS: FallbackStep[] = [
   {
     id: 'safety',
-    title: 'Input Safety & Injection Screen',
-    loadingLabel: 'Screening question & verifying rate limits...',
-    latencyKey: 'safety_ms',
-    fallbackLatency: 2,
-    details: (props) => [
-      'Question length validated: PASS',
-      props.scope === 'demo'
-        ? 'Scope resolved: demo corpus (pre-indexed)'
-        : 'Scope resolved: isolated tenant session',
-    ],
+    title: 'Input Safety & Scope',
+    loadingLabel: 'Screening query & scope...',
+    detail: 'Query passed safety filter',
   },
   {
-    id: 'embedding',
-    title: 'Query Reformulation & Embedding',
-    loadingLabel: 'Generating 1024-dim Cohere embedding...',
-    latencyKey: 'rewrite_ms',
-    fallbackLatency: 18,
-    details: () => [
-      'Evaluated conversation context for rewrites',
-      'Generated 1024-dim embedding via Cohere embed-english-v3.0',
-    ],
+    id: 'rewrite',
+    title: 'Query Processing',
+    loadingLabel: 'Analyzing context for rewrites...',
+    detail: 'De-referenced query intent',
   },
   {
     id: 'retrieval',
-    title: 'Hybrid Retrieval (Dense Qdrant + Sparse BM25)',
-    loadingLabel: 'Executing hybrid vector + lexical search...',
-    latencyKey: 'retrieval_ms',
-    fallbackLatency: 84,
-    details: () => [
-      'Queried Qdrant dense vector index (Cosine similarity)',
-      'Computed BM25 lexical inverted index scores',
-      'Fused candidate chunks via Reciprocal Rank Fusion (RRF)',
-    ],
+    title: 'Hybrid Retrieval',
+    loadingLabel: 'Searching vector & BM25 indices...',
+    detail: 'Retrieved candidate chunks',
   },
   {
     id: 'rerank',
-    title: 'Cohere Rerank v3.5 & Not-Found Gate',
-    loadingLabel: 'Neural reranking & relevance scoring...',
-    latencyKey: 'rerank_ms',
-    fallbackLatency: 25,
-    details: (props) => [
-      props.rerankFallback
-        ? 'Cohere circuit breaker active: Fell back to hybrid search order'
-        : 'Neural cross-encoder reranked top candidates',
-      props.isFound === false
-        ? 'Not-Found Gate: Query is out-of-domain'
-        : 'Not-Found Gate passed: Highest relevance score meets threshold (>= 0.25)',
-    ],
+    title: 'Rerank & Relevance Gate',
+    loadingLabel: 'Evaluating cross-encoder relevance...',
+    detail: 'Relevance threshold verified',
   },
   {
     id: 'expansion',
-    title: 'Parent Window Context Expansion',
-    loadingLabel: 'Expanding surrounding parent sections...',
-    latencyKey: 'expansion_ms',
-    fallbackLatency: 12,
-    details: () => [
-      'Expanded surrounding parent markdown headers',
-      'Compiled context window within model token budget',
-    ],
+    title: 'Context Expansion',
+    loadingLabel: 'Compiling parent document context...',
+    detail: 'Expanded parent passages',
   },
   {
     id: 'generation',
-    title: 'Grounded Generation & Citation Verification',
-    loadingLabel: 'Synthesizing response with verifiable citations...',
-    latencyKey: 'generation_ms',
-    fallbackLatency: 410,
-    details: (props) => [
-      `Generated streaming response via ${props.modelUsed || 'Groq Llama-3.3-70b-versatile'}`,
-      `Audited citations: ${props.sourcesCount ?? 1} source citations verified`,
-      props.isGrounded === false
-        ? 'Grounding evaluation: Domain Verified'
-        : 'Grounding evaluation: PASS (100% grounded in retrieved text)',
-    ],
+    title: 'Answer Generation',
+    loadingLabel: 'Synthesizing grounded answer...',
+    detail: 'Streamed response with citations',
   },
 ];
 
@@ -119,36 +79,31 @@ export const AIReasoningTrace: React.FC<AIReasoningTraceProps> = (props) => {
     activeStageIdx = 0,
     timings_ms,
     defaultExpanded = false,
+    traceStages,
   } = props;
 
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
 
-  // During loading, show steps progressively one by one
-  // When completed, all 6 steps exist
-  const currentStage = isLoading ? Math.min(activeStageIdx, PIPELINE_STEPS.length - 1) : PIPELINE_STEPS.length - 1;
-  const visibleSteps = isLoading
-    ? PIPELINE_STEPS.slice(0, currentStage + 1)
-    : PIPELINE_STEPS;
-
-  const currentStep = PIPELINE_STEPS[currentStage];
-  const totalMs = timings_ms?.total_ms || Object.values(timings_ms || {}).reduce((a, b) => a + (b || 0), 0) || 1240;
+  // Calculate total latency
+  const totalMs =
+    timings_ms?.total_ms ||
+    (traceStages && traceStages.reduce((sum, s) => sum + (s.latency_ms || 0), 0)) ||
+    Object.values(timings_ms || {}).reduce((a, b) => a + (b || 0), 0) ||
+    350;
 
   const formatThoughtDuration = (ms: number): string => {
-    if (!ms || ms <= 0) return 'Thought for 1 second';
+    if (!ms || ms <= 0) return 'Thought for <1s';
     const totalSeconds = Math.round(ms / 1000);
-    if (totalSeconds < 1) {
-      return 'Thought for <1 second';
-    }
-    if (totalSeconds < 60) {
-      return `Thought for ${totalSeconds} second${totalSeconds === 1 ? '' : 's'}`;
-    }
-    const minutes = Math.floor(totalSeconds / 60);
-    const remainingSeconds = totalSeconds % 60;
-    if (remainingSeconds === 0) {
-      return `Thought for ${minutes} minute${minutes === 1 ? '' : 's'}`;
-    }
-    return `Thought for ${minutes}m ${remainingSeconds}s`;
+    if (totalSeconds < 1) return `Thought for ${(ms / 1000).toFixed(1)}s`;
+    return `Thought for ${totalSeconds}s`;
   };
+
+  // When backend supplies actual trace stages, render them directly!
+  const hasBackendStages = Boolean(traceStages && traceStages.length > 0);
+
+  // During loading: progressive steps
+  const currentStage = Math.min(activeStageIdx, DEFAULT_LOADING_STEPS.length - 1);
+  const currentLoadingStep = DEFAULT_LOADING_STEPS[currentStage];
 
   return (
     <div className="w-full select-none my-1">
@@ -160,19 +115,19 @@ export const AIReasoningTrace: React.FC<AIReasoningTraceProps> = (props) => {
               Thinking
             </span>
             <span className="text-muted-foreground/30">•</span>
-            <span className="text-xs text-muted-foreground font-normal truncate max-w-[200px] sm:max-w-xs">
-              <ShimmerText text={currentStep.loadingLabel} />
+            <span className="text-xs text-muted-foreground font-normal truncate max-w-[240px] sm:max-w-xs">
+              <ShimmerText text={currentLoadingStep?.loadingLabel || 'Analyzing documents...'} />
             </span>
           </div>
         </div>
       ) : (
-        /* When completed: only show 'Thought for -- secs' immediately followed by dropdown chevron */
+        /* Completed: 'Thought for -- s' toggle button */
         <div className="flex items-center py-0.5">
           <button
             type="button"
             onClick={() => setIsExpanded((prev) => !prev)}
             className="inline-flex items-center gap-1.5 py-1 px-2 -ml-1 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer select-none group"
-            title={isExpanded ? 'Hide reasoning process' : 'Show reasoning process'}
+            title={isExpanded ? 'Hide pipeline trace' : 'Show pipeline trace'}
           >
             <span className="font-medium tracking-tight">
               {formatThoughtDuration(totalMs)}
@@ -186,92 +141,130 @@ export const AIReasoningTrace: React.FC<AIReasoningTraceProps> = (props) => {
         </div>
       )}
 
-      {/* Step by step progressive reveal (visible while loading or when expanded) */}
+      {/* Reasoning Process Timeline */}
       <AnimatePresence initial={false}>
         {(isLoading || isExpanded) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.22, ease: 'easeInOut' }}
-            className="overflow-hidden pt-2 pl-2"
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden pt-1.5 pl-2"
           >
             <div className="space-y-0.5">
-              {visibleSteps.map((step, idx) => {
-                const isStepDone = !isLoading || idx < currentStage;
-                const isStepActive = isLoading && idx === currentStage;
-                const isLast = idx === visibleSteps.length - 1;
-                const latency = timings_ms?.[step.latencyKey] ?? step.fallbackLatency;
+              {/* If we have real backend stages, render them */}
+              {hasBackendStages && !isLoading ? (
+                traceStages!.map((stage, idx) => {
+                  const isLast = idx === traceStages!.length - 1;
+                  const isDone = stage.status === 'done';
+                  const isFailed = stage.status === 'failed';
+                  const isSkipped = stage.status === 'skipped';
 
-                return (
-                  <motion.div
-                    key={step.id}
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.25, ease: 'easeOut' }}
-                    className="flex gap-2.5 items-start relative group"
-                  >
-                    {/* Timeline Node & Connector Line */}
-                    <div className="flex flex-col items-center shrink-0">
-                      <div className="mt-0.5">
-                        {isStepDone ? (
-                          <span className="flex size-4 items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-500 shadow-xs text-white">
-                            <Check className="size-2.5" strokeWidth={3} />
-                          </span>
-                        ) : isStepActive ? (
-                          <span className="flex size-4 items-center justify-center text-primary shrink-0">
-                            <Loader2 className="size-3.5 animate-spin text-primary" />
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {!isLast && (
-                        <span className="w-0.5 min-h-4 flex-1 my-1 rounded-sm bg-border/60" />
-                      )}
-                    </div>
-
-                    {/* Step Content */}
-                    <div className="flex-1 pb-2 min-w-0">
-                      <div className="inline-flex items-center gap-1.5 text-xs flex-wrap">
-                        <span
-                          className={`font-semibold tracking-tight ${
-                            isStepActive
-                              ? 'text-foreground'
-                              : 'text-muted-foreground'
-                          }`}
-                        >
-                          {isStepActive ? (
-                            <ShimmerText text={step.title} />
+                  return (
+                    <motion.div
+                      key={stage.id || idx}
+                      initial={{ opacity: 0, y: -2 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex gap-2.5 items-start relative group"
+                    >
+                      {/* Node Icon */}
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="mt-0.5">
+                          {isDone ? (
+                            <span className="flex size-3.5 items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-500 text-white shadow-xs">
+                              <Check className="size-2.5" strokeWidth={3} />
+                            </span>
+                          ) : isFailed ? (
+                            <span className="flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-white shadow-xs">
+                              <AlertTriangle className="size-2" strokeWidth={3} />
+                            </span>
                           ) : (
-                            step.title
+                            <span className="flex size-3.5 items-center justify-center rounded-full bg-muted text-muted-foreground border border-border">
+                              <Minus className="size-2" />
+                            </span>
                           )}
-                        </span>
-
-                        {isStepDone && (
-                          <span className="font-mono text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.2 rounded border border-border/50 shrink-0">
-                            {latency}ms
-                          </span>
+                        </div>
+                        {!isLast && (
+                          <span className="w-0.5 min-h-3 flex-1 my-1 rounded-sm bg-border/50" />
                         )}
                       </div>
 
-                      {/* Sub-bullets */}
-                      {(isStepActive || isExpanded) && (
-                        <div className="mt-1 space-y-0.5 pl-0.5">
-                          {step.details(props).map((detail, dIdx) => (
-                            <div
-                              key={dIdx}
-                              className="flex items-start gap-1.5 text-[11.5px] text-muted-foreground leading-relaxed"
-                            >
-                              <span className="size-1 rounded-full bg-muted-foreground/50 mt-1.5 shrink-0" />
-                              <span className="flex-1">{detail}</span>
-                            </div>
-                          ))}
+                      {/* Content */}
+                      <div className="flex-1 pb-1.5 min-w-0">
+                        <div className="inline-flex items-center gap-1.5 text-xs flex-wrap">
+                          <span
+                            className={`font-semibold tracking-tight ${
+                              isFailed
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : isSkipped
+                                  ? 'text-muted-foreground/60'
+                                  : 'text-foreground/90'
+                            }`}
+                          >
+                            {stage.title}
+                          </span>
+                          {!isSkipped && stage.latency_ms > 0 && (
+                            <span className="font-mono text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.2 rounded border border-border/40 shrink-0">
+                              {stage.latency_ms.toFixed(0)}ms
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })}
+
+                        {/* Concise single statement */}
+                        {stage.details && stage.details.length > 0 && (
+                          <div className="mt-0.5 text-[11px] text-muted-foreground leading-tight truncate">
+                            {stage.details[0]}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })
+              ) : (
+                /* Fallback loading view */
+                DEFAULT_LOADING_STEPS.slice(0, isLoading ? currentStage + 1 : DEFAULT_LOADING_STEPS.length).map((step, idx) => {
+                  const isStepDone = !isLoading || idx < currentStage;
+                  const isStepActive = isLoading && idx === currentStage;
+                  const isLast = idx === (isLoading ? currentStage : DEFAULT_LOADING_STEPS.length - 1);
+
+                  return (
+                    <motion.div
+                      key={step.id}
+                      initial={{ opacity: 0, y: -2 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex gap-2.5 items-start relative group"
+                    >
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="mt-0.5">
+                          {isStepDone ? (
+                            <span className="flex size-3.5 items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-500 text-white shadow-xs">
+                              <Check className="size-2.5" strokeWidth={3} />
+                            </span>
+                          ) : isStepActive ? (
+                            <span className="flex size-3.5 items-center justify-center text-primary shrink-0">
+                              <Loader2 className="size-3 animate-spin text-primary" />
+                            </span>
+                          ) : null}
+                        </div>
+                        {!isLast && (
+                          <span className="w-0.5 min-h-3 flex-1 my-1 rounded-sm bg-border/50" />
+                        )}
+                      </div>
+
+                      <div className="flex-1 pb-1.5 min-w-0">
+                        <div className="inline-flex items-center gap-1.5 text-xs flex-wrap">
+                          <span className="font-semibold tracking-tight text-foreground/90">
+                            {isStepActive ? <ShimmerText text={step.title} /> : step.title}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                          {step.detail}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })
+              )}
             </div>
           </motion.div>
         )}

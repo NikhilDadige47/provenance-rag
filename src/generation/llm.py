@@ -17,6 +17,8 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
+import httpx
+
 from src.interfaces import ILLM
 from src.security.config import OwnerConfig
 from src.security.egress import SecureHttpClient
@@ -120,7 +122,12 @@ class GroqLLM(ILLM):
         return "groq"
 
     async def generate_stream(
-        self, prompt: str, api_key: Secret | None = None, model: str | None = None
+        self,
+        prompt: str,
+        api_key: Secret | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
     ) -> AsyncIterator[str]:
         """Stream generated response tokens from Groq."""
         active_key = api_key or self._api_key
@@ -135,11 +142,16 @@ class GroqLLM(ILLM):
             "User-Agent": "ProvenanceRAG/1.0",
         }
 
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
         payload = {
             "model": active_model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "max_tokens": DEFAULT_OUTPUT_TOKENS,
-            "temperature": DEFAULT_TEMPERATURE,
+            "temperature": temperature if temperature is not None else DEFAULT_TEMPERATURE,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -184,7 +196,12 @@ class OpenAILLM(ILLM):
         return "openai"
 
     async def generate_stream(
-        self, prompt: str, api_key: Secret | None = None, model: str | None = None
+        self,
+        prompt: str,
+        api_key: Secret | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
     ) -> AsyncIterator[str]:
         """Stream generated response tokens from OpenAI."""
         active_key = api_key or self._api_key
@@ -199,11 +216,16 @@ class OpenAILLM(ILLM):
             "User-Agent": "ProvenanceRAG/1.0",
         }
 
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
         payload = {
             "model": active_model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "max_tokens": DEFAULT_OUTPUT_TOKENS,
-            "temperature": DEFAULT_TEMPERATURE,
+            "temperature": temperature if temperature is not None else DEFAULT_TEMPERATURE,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -466,12 +488,123 @@ class GeminiLLM(ILLM):
                 )
 
 
+class LocalOpenAILLM(ILLM):
+    """Local OpenAI-compatible adapter for self-hosted LLMs (Ollama, LM Studio, vLLM, LocalAI)."""
+
+    DEFAULT_BASE_URL = "http://localhost:11434/v1"
+    DEFAULT_MODEL = "llama3.1:8b"
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str = DEFAULT_MODEL,
+        api_key: Secret | None = None,
+        is_visitor_key: bool = True,
+    ) -> None:
+        raw_url = (base_url or "").strip() or self.DEFAULT_BASE_URL
+        if not raw_url.endswith("/v1") and not raw_url.endswith("/v1/"):
+            raw_url = raw_url.rstrip("/") + "/v1"
+        self._base_url = raw_url.rstrip("/")
+        self._model = (model or "").strip() or self.DEFAULT_MODEL
+        self._api_key = api_key
+        self._is_visitor_key = is_visitor_key
+        # Configured with loopback/local LLM egress permission enabled
+        self._http_client = SecureHttpClient.create_async_client(allow_local_llm=True)
+
+    @property
+    def provider_name(self) -> str:
+        return "ollama"
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        api_key: Secret | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream generated response tokens from a local OpenAI-compatible endpoint."""
+        active_model = model or self._model
+        key_val = api_key or self._api_key
+        auth_header = (
+            f"Bearer {key_val.reveal()}"
+            if (key_val and key_val.reveal())
+            else "Bearer ollama"
+        )
+
+        headers = {
+            "Authorization": auth_header,
+            "Content-Type": "application/json",
+            "User-Agent": "ProvenanceRAG/1.0 (Local)",
+        }
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        # Local engines (Ollama, LM Studio) do not reliably support stream_options
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "max_tokens": DEFAULT_OUTPUT_TOKENS,
+            "temperature": temperature if temperature is not None else DEFAULT_TEMPERATURE,
+            "stream": True,
+        }
+
+        # Endpoints to attempt: primary base URL + host.docker.internal fallback if running inside container
+        endpoints = [f"{self._base_url}/chat/completions"]
+        if "localhost" in self._base_url:
+            endpoints.append(self._base_url.replace("localhost", "host.docker.internal") + "/chat/completions")
+        elif "127.0.0.1" in self._base_url:
+            endpoints.append(self._base_url.replace("127.0.0.1", "host.docker.internal") + "/chat/completions")
+
+        usage_sink: list[TokenUsage] = []
+        last_error = None
+
+        for endpoint in endpoints:
+            try:
+                print(f"\033[96m[RAG TRACE]\033[0m Calling Local LLM ({active_model}) at {endpoint} ...")
+                async with self._http_client.stream(
+                    "POST",
+                    endpoint,
+                    json=payload,
+                    headers=headers,
+                    timeout=60.0,
+                ) as response:
+                    if response.status_code in (401, 403):
+                        raise InvalidKeyError(provider="ollama", is_visitor_key=self._is_visitor_key)
+                    if response.status_code != 200:
+                        err_bytes = await response.aread()
+                        err_msg = err_bytes.decode("utf-8", errors="ignore")
+                        print(f"\033[91m[RAG TRACE ❌ Local Model Error]\033[0m HTTP {response.status_code} from {endpoint}: {err_msg}")
+                        raise ProviderUnavailableError(
+                            provider="ollama", status_code=response.status_code
+                        )
+
+                    async for content in _iter_openai_sse(response, usage_sink):
+                        yield content
+
+                    if usage_sink:
+                        self._last_usage = usage_sink[-1]
+                    return
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_error = exc
+                continue
+
+        print(f"\033[91m[RAG TRACE ❌ Local LLM Connection Failed]\033[0m Could not connect to any of: {endpoints}. Ensure Ollama/LM Studio is running.")
+        raise ProviderUnavailableError(provider="ollama", status_code=503) from last_error
+
+
 _BYOK_ADAPTERS: dict[str, tuple[type[ILLM], str]] = {
     "openai": (OpenAILLM, "gpt-4o-mini"),
     "anthropic": (AnthropicLLM, "claude-3-5-haiku-20241022"),
     "groq": (GroqLLM, "llama-3.3-70b-versatile"),
     "mistral": (MistralLLM, "mistral-small-latest"),
     "gemini": (GeminiLLM, "gemini-1.5-flash-latest"),
+    "ollama": (LocalOpenAILLM, "llama3.1:8b"),
+    "local": (LocalOpenAILLM, "llama3.1:8b"),
+    "lmstudio": (LocalOpenAILLM, "local-model"),
 }
 
 
@@ -479,10 +612,15 @@ def get_llm_adapter(
     provider: str | None = None,
     api_key: Secret | None = None,
     model: str | None = None,
+    base_url: str | None = None,
 ) -> ILLM:
-    """Factory: visitor key + provider + model, else owner Groq default."""
-    if api_key and bool(api_key.reveal()):
-        provider_norm = (provider or "openai").strip().lower()
+    """Factory: visitor key/local model + provider + model, else owner Groq default."""
+    provider_norm = (provider or "").strip().lower()
+    is_local = provider_norm in ("ollama", "local", "lmstudio")
+
+    if (api_key and bool(api_key.reveal())) or is_local:
+        if not provider_norm:
+            provider_norm = "openai"
         spec = _BYOK_ADAPTERS.get(provider_norm)
         if spec is None:
             supported = ", ".join(sorted(_BYOK_ADAPTERS))
@@ -490,6 +628,13 @@ def get_llm_adapter(
                 f"Unsupported BYOK LLM provider '{provider_norm}'. Choose one of: {supported}."
             )
         adapter_cls, default_model = spec
+        if is_local:
+            return adapter_cls(
+                base_url=base_url,
+                model=(model or default_model).strip() or default_model,
+                api_key=api_key,
+                is_visitor_key=True,
+            )
         return adapter_cls(
             api_key=api_key,
             model=(model or default_model).strip() or default_model,

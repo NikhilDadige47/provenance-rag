@@ -66,13 +66,16 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${this.sessionToken}`;
     }
 
-    // LLM BYOK is independent of parser=auto and of the session tier label.
-    // If a visitor pasted a key on the upload tab, send it on chat.
+    // LLM BYOK or Local Model is independent of parser=auto and of the session tier label.
+    // If a visitor configured custom keys or a local endpoint, send headers on chat.
     const llmKey = this.visitorKeys?.key?.trim();
-    if (llmKey) {
-      headers['X-LLM-Key'] = llmKey;
-      headers['X-LLM-Provider'] = this.visitorKeys.provider;
-      headers['X-LLM-Model'] = this.visitorKeys.model;
+    const provider = this.visitorKeys?.provider;
+    const isLocal = ['ollama', 'local', 'lmstudio'].includes(provider || '');
+    if (llmKey || isLocal) {
+      if (llmKey) headers['X-LLM-Key'] = llmKey;
+      if (provider) headers['X-LLM-Provider'] = provider;
+      if (this.visitorKeys?.model) headers['X-LLM-Model'] = this.visitorKeys.model;
+      if (this.visitorKeys?.baseUrl) headers['X-LLM-Base-Url'] = this.visitorKeys.baseUrl;
     }
 
     return headers;
@@ -306,11 +309,15 @@ export class ApiClient {
     this.sessionToken = null;
   }
 
-  async testConnection(provider: string, key: string): Promise<{ success: boolean; message: string; models?: string[] }> {
+  async testConnection(
+    provider: string,
+    key: string,
+    baseUrl?: string
+  ): Promise<{ success: boolean; message: string; models?: string[] }> {
     const res = await this.apiFetch('/connections/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, key }),
+      body: JSON.stringify({ provider, key, base_url: baseUrl }),
     });
 
     const data = await res.json().catch(() => ({}));

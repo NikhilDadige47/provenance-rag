@@ -247,15 +247,17 @@ class DatabaseManager:
 
     def get_parent(self, parent_id: str, scope: str) -> dict[str, Any] | None:
         """Fetch parent chunk strictly filtered by parent_id AND scope (session or demo)."""
+        alt_id = parent_id[2:] if parent_id.startswith("p_") else f"p_{parent_id}"
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT parent_id, doc_id, session_id, breadcrumb, text, token_count, page_start, page_end
                 FROM parents
-                WHERE parent_id = ? AND (session_id = ? OR session_id = 'demo')
+                WHERE (parent_id = ? OR parent_id = ?)
+                  AND (session_id = ? OR session_id = 'demo' OR session_id = 'provenance_rag_demo')
                 """,
-                (parent_id, scope),
+                (parent_id, alt_id, scope),
             )
             row = cursor.fetchone()
             if row:

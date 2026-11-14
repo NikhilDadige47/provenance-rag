@@ -50,6 +50,9 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   gemini: 'Gemini',
   mistral: 'Mistral',
+  ollama: 'Ollama',
+  local: 'Local AI',
+  lmstudio: 'LM Studio',
 };
 
 function formatLlmLabel(provider?: string, model?: string): string {
@@ -236,6 +239,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           rerank_fallback: response.rerank_fallback,
           used_visitor_key: response.used_visitor_key,
           model_used: response.model_used,
+          trace_stages: response.trace_stages || [],
         },
       ]);
 
@@ -462,6 +466,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                   modelUsed={msg.model_used}
                   scope={scope}
                   defaultExpanded={false}
+                  traceStages={msg.trace_stages}
                 />
                 )}
 

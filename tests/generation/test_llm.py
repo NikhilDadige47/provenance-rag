@@ -8,6 +8,7 @@ from src.generation.llm import (
     AnthropicLLM,
     GeminiLLM,
     GroqLLM,
+    LocalOpenAILLM,
     MistralLLM,
     OpenAILLM,
     consume_usage,
@@ -167,6 +168,42 @@ def test_get_llm_adapter_factory():
     )
     assert isinstance(mistral_adapter, MistralLLM)
     assert mistral_adapter._model == "mistral-large-latest"
+
+    # Local Ollama adapter (without requiring API key)
+    ollama_adapter = get_llm_adapter(
+        provider="ollama", model="llama3.1:8b", base_url="http://localhost:11434/v1"
+    )
+    assert isinstance(ollama_adapter, LocalOpenAILLM)
+    assert ollama_adapter._model == "llama3.1:8b"
+    assert ollama_adapter._base_url == "http://localhost:11434/v1"
+
+
+@pytest.mark.asyncio
+async def test_local_ollama_llm_streaming_success():
+    """Verify LocalOpenAILLM streams tokens correctly from local SSE endpoint."""
+    llm = LocalOpenAILLM(base_url="http://localhost:11434/v1", model="llama3.1:8b")
+
+    sse_lines = [
+        'data: {"choices": [{"delta": {"content": "Local"}}]}',
+        'data: {"choices": [{"delta": {"content": " answer"}}]}',
+        "data: [DONE]",
+    ]
+
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+
+    async def aiter_lines_gen():
+        for line in sse_lines:
+            yield line
+
+    mock_resp.aiter_lines = aiter_lines_gen
+    mock_resp.__aenter__.return_value = mock_resp
+
+    with patch.object(llm._http_client, "stream", return_value=mock_resp):
+        tokens = []
+        async for token in llm.generate_stream("Hi"):
+            tokens.append(token)
+        assert "".join(tokens) == "Local answer"
 
 
 def test_get_llm_adapter_rejects_unknown_provider() -> None:

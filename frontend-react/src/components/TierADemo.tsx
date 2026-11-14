@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import { FileText, ShieldCheck, ArrowRight, HelpCircle } from 'lucide-react';
 import { DocViewerModal, DemoDocData } from './DocViewerModal';
-import { ExampleQuestion } from '../types';
+import { ExampleQuestion, LLMConfig } from '../types';
+import { ModelSelector } from './ModelSelector';
 
 interface TierADemoProps {
   onAskExample: (question: string) => void;
   exampleChips?: ExampleQuestion[];
+  llmConfig?: LLMConfig | null;
+  onKeyConfigChange?: (config: LLMConfig | null) => void;
+  onToast?: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
 }
 
 const DEMO_DOCS: DemoDocData[] = [
@@ -51,7 +55,13 @@ const FALLBACK_QUESTIONS = [
   'How many supersonic passenger jets did Apple deliver to airlines in 2023?',
 ];
 
-export const TierADemo: React.FC<TierADemoProps> = ({ onAskExample, exampleChips = [] }) => {
+export const TierADemo: React.FC<TierADemoProps> = ({
+  onAskExample,
+  exampleChips = [],
+  llmConfig = null,
+  onKeyConfigChange = () => {},
+  onToast = () => {},
+}) => {
   const [selectedDoc, setSelectedDoc] = useState<DemoDocData | null>(null);
 
   const sampleQuestions =
@@ -61,6 +71,14 @@ export const TierADemo: React.FC<TierADemoProps> = ({ onAskExample, exampleChips
 
   return (
     <div className="space-y-3">
+      {/* Universal Model Selector */}
+      <ModelSelector
+        config={llmConfig}
+        onChange={onKeyConfigChange}
+        onToast={onToast}
+        sectionContext="demo"
+      />
+
       <div className="border border-border rounded-lg p-3 surface-inset shadow-sm space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">

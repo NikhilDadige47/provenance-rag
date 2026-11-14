@@ -93,7 +93,12 @@ class ILLM(ABC):
 
     @abstractmethod
     async def generate_stream(
-        self, prompt: str, api_key: Secret | None = None, model: str | None = None
+        self,
+        prompt: str,
+        api_key: Secret | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
     ) -> AsyncIterator[str]:
         """Stream generated tokens for the prompt."""
         pass

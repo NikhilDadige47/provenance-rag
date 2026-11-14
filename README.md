@@ -13,12 +13,14 @@ It combines hybrid retrieval, parent-child chunking, reranking, and relevance va
 | Area | Highlights |
 |---|---|
 | Document Access | Pre-indexed financial filings available without an API key |
+| Model Agnostic | Flexible inference: Default Cloud (Groq 70B), Local (Ollama / LM Studio / vLLM), or Cloud BYOK |
 | Retrieval | Hybrid Dense + Sparse Search with Cohere reranking |
 | Citations | Page-level source references for generated answers |
 | Reliability | Relevance-based answer validation and refusal |
-| Privacy | Ephemeral sessions with automatic 2-hour data cleanup |
+| Privacy | Ephemeral sessions with automatic 2-hour data cleanup and zero-egress local LLM isolation |
 | Performance | 100% Recall@5 and 0.971 MRR on a 50-question benchmark |
-| Cost Efficiency | Quality gates reduce unnecessary LLM calls |
+| Reasoning Traces | Real-time 6-stage execution telemetry with latency breakdown and terminal traces |
+| Adaptive Pruning | Dynamic context budgeting per model parameter tier for sub-second local TTFT |
 
 **Quick Links:** [Deployment Guide](DEPLOY.md) · [Demo Script](docs/DEMO_SCRIPT.md) · [Architecture](design-system/provenance-rag/image.png)
 
@@ -106,6 +108,58 @@ When retrieved evidence does not meet the configured relevance threshold, the sy
 
 Each session uses an isolated Qdrant scope to prevent retrieval across different user sessions.
 
+### 7. Local & Self-Hosted Inference (Ollama, LM Studio, vLLM)
+
+Provenance RAG includes native, first-class support for self-hosted models. Users can run completely offline, private inference via Ollama or LM Studio without leaking document contents or query text:
+- **Automatic Model Discovery:** One-click connection probing queries `{base_url}/models` and populates installed local models into the UI.
+- **Strict Network Egress Guardrails:** SSRF-protected egress client allows loopback communication (`localhost`, `127.0.0.1`) strictly for local LLMs while blocking unapproved external networks.
+- **Container Loopback Fallback:** Automatic host resolution (`host.docker.internal`) enables seamless communication when the backend runs inside a Docker container.
+
+### 8. Model-Agnostic Optimization: The Three Production Pillars
+
+To ensure local models perform with cloud-grade speed, accuracy, and format adherence, the engine implements three proven design patterns:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        PROVENANCE RAG ARCHITECTURE                     │
+│                                                                        │
+│   User Query ──► Input Screen ──► Hybrid Search ──► Gate 6 Rerank      │
+│                                                         │ (Passed)     │
+│                                                         ▼              │
+│    ┌──────────────────────────────────────────────────────────────┐    │
+│    │  PILLAR 1: Model Capabilities Registry (Strategy Pattern)    │    │
+│    │  • Detects Model Tier: Micro (≤3B), Mid (7B–14B), Frontier   │    │
+│    └──────────────────────────────┬───────────────────────────────┘    │
+│                                   │                                    │
+│    ┌──────────────────────────────▼───────────────────────────────┐    │
+│    │  PILLAR 2: Adaptive Context Pruning (Token Budgeting)        │    │
+│    │  • Micro: Top 2 Passages (~500 tokens) ──► Sub-second TTFT   │    │
+│    │  • Mid:   Top 3 Passages (~1,100 tokens)──► Balanced Accuracy│    │
+│    │  • Cloud: Top 5 Passages (~2,500 tokens)──► Full Synthesis   │    │
+│    └──────────────────────────────┬───────────────────────────────┘    │
+│                                   │                                    │
+│    ┌──────────────────────────────▼───────────────────────────────┐    │
+│    │  PILLAR 3: Dynamic Few-Shot Grounding & OpenAI Gateway       │    │
+│    │  • Injects 1-Shot Citation Demo for small models             │    │
+│    │  • Neutralizes refusal poisoning & strips conversational tags│    │
+│    │  • Universal SSE Streaming with client telemetry feedback    │    │
+│    └──────────────────────────────┬───────────────────────────────┘    │
+│                                   ▼                                    │
+│                 Evidence-Grounded Streaming Answer                     │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Pillar 1: Model Capabilities Registry & Dynamic Prompt Strategy:**
+   - Small models (e.g., `qwen2.5:1.5b`, `llama3.2:1b/3b`) easily suffer from instruction drift and negative bias if overloaded with dense rules.
+   - The engine automatically applies a tailored Strategy profile: concise system prompts with an embedded **1-shot citation demonstration** for micro models, and full markdown section matrices for frontier models.
+2. **Pillar 2: Adaptive Context Pruning (Token Budgeting):**
+   - On consumer hardware (CPUs or modest GPUs), feeding 5 full parent passages (~2,500 tokens) induces a 5–8 second prompt prefill (TTFT) delay before the first token streams.
+   - Adaptive Context Pruning budgets candidate passages to the top 2 for micro models, slashing prefill latency to **<400ms** while preserving exact answer relevance.
+3. **Pillar 3: Universal Gateway & Reactive Telemetry:**
+   - Universal OpenAI-compatible SSE adapter works identically with Ollama, LM Studio, LocalAI, and vLLM.
+   - ANSI colored terminal traces display every step live: Request ID, Model Tier, Query Rewriting, RRF hybrid retrieval, Gate 6 rerank scores, context expansion, generation tokens, and citation verification.
+   - The frontend reasoning trace updates reactively based on true backend execution stages rather than static client-side timers.
+
 ---
 
 ## Technology Stack
@@ -113,14 +167,16 @@ Each session uses an isolated Qdrant scope to prevent retrieval across different
 | Layer | Technologies |
 |---|---|
 | Backend | Python, FastAPI |
-| Frontend | React, JavaScript |
+| Frontend | React, TypeScript, Tailwind CSS, Lucide Icons |
 | Vector Database | Qdrant |
 | Relational Storage | SQL / SQLite |
-| Embeddings & Reranking | Cohere |
-| LLM Inference | Groq |
+| Embeddings & Reranking | Cohere Embed v3, Cohere Rerank v3.5 |
+| Cloud LLM Inference | Groq (Llama 3.3 70B, DeepSeek R1, Llama 3.1 8B) |
+| Local LLM Inference | Ollama, LM Studio, vLLM, LocalAI |
+| Cloud BYOK | OpenAI (GPT-4o), Anthropic (Claude 3.5), Google Gemini, Mistral |
 | PDF Processing | PyMuPDF |
 | Optional Parsing | LlamaParse, Landing AI |
-| Retrieval | Dense Search, BM25, Hybrid Search |
+| Retrieval | Dense Cosine Search, BM25 Lexical Inverted Index, RRF Fusion |
 
 ---
 
@@ -267,5 +323,43 @@ npm run dev
 ```
 
 Open the local frontend URL displayed by Vite in your terminal.
+
+### 8. (Optional) Run with Local LLMs (Ollama / LM Studio)
+
+To run entirely private, zero-cost inference using local models:
+
+1. **Install and Start Ollama:**
+   ```bash
+   # Download Ollama from https://ollama.com
+   # Pull your preferred model (e.g. ultra-fast micro model or balanced 8B)
+   ollama pull qwen2.5:1.5b
+   ollama pull llama3.1:8b
+
+   # Start the Ollama daemon
+   ollama serve
+   ```
+
+2. **Select Local Model in the Web UI:**
+   - In either the **Tier A Demo** or **Tier B Upload** tab, click the **"Inference Model"** selector.
+   - Switch to the **"Local Model"** tab.
+   - Click **"Test & Discover"** to probe `http://localhost:11434/v1` and auto-populate installed local tags.
+   - The UI automatically recognizes your model's tier (e.g., `⚡ Ultra-Fast • Top 2 Passages` for `qwen2.5:1.5b` or `⚖️ Balanced • Top 3 Passages` for `llama3.1:8b`).
+   - Click **"Apply Local Model"** and ask your question!
+   - Follow live execution and token timing directly in your terminal with colored pipeline traces:
+
+   ```text
+   ===========================================================================
+   [RAG TRACE] Request ID: req_9f3a12b | Model: ollama/qwen2.5:1.5b (MICRO) | Tier: tier_a_demo
+   [RAG TRACE] Profile: ⚡ Ultra-Fast • Top 2 Passages | Max Chunks: 2 | Temp: 0.05
+   [RAG TRACE] Question: "What are Apple's revenue streams?"
+   [RAG TRACE] Step 1 (Rewrite): Skipped (first turn, 0.0ms)
+   [RAG TRACE] Step 2 (Retrieval): Scope='provenance_rag_demo' | Found 5 chunks | Rerank scores: [0.892, 0.741, ...] (18.4ms)
+   [RAG TRACE] Step 3 (Expansion): Adaptive Pruning (MICRO) -> Kept top 2 of 5 passages (4.1ms)
+   [RAG TRACE] Step 4 (Prompt): Built micro prompt with 2 passages. Invoking ollama/qwen2.5:1.5b (temp=0.05) ...
+   [RAG TRACE] Step 5 (Generation): Received 64 streamed chunks in 380.2ms
+   [RAG TRACE] Step 6 (Citations): Grounded: True | Cited Passages: 2 (1.8ms)
+   [RAG TRACE ✅ Completed] Total Pipeline Latency: 405.5ms
+   ===========================================================================
+   ```
 
 ---

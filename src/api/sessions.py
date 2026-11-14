@@ -255,8 +255,9 @@ async def get_visitor_llm_key(
     x_llm_key: Annotated[str | None, Header(alias="X-LLM-Key")] = None,
     x_llm_provider: Annotated[str | None, Header(alias="X-LLM-Provider")] = None,
     x_llm_model: Annotated[str | None, Header(alias="X-LLM-Model")] = None,
+    x_llm_base_url: Annotated[str | None, Header(alias="X-LLM-Base-Url")] = None,
 ) -> VisitorKeys:
-    """Extract optional BYOK LLM credentials from request headers.
+    """Extract optional BYOK / local LLM credentials from request headers.
 
     The LLM key is request-scoped only: read from the header, used for this request,
     and never persisted to any storage medium.
@@ -269,6 +270,7 @@ async def get_visitor_llm_key(
         llm_provider=x_llm_provider,
         llm_key=llm_key,
         llm_model=x_llm_model,
+        llm_base_url=x_llm_base_url,
     )
 
 

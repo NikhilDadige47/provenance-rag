@@ -16,7 +16,7 @@ import { parserDisplay, readUsage } from '../lib/quota';
 import { previewUrlForDoc } from '../lib/uploadedFiles';
 import { DocViewerModal, DemoDocData } from './DocViewerModal';
 import { persistTermsAccepted, readTermsAccepted, TermsModal } from './TermsModal';
-import { TierCKeys } from './TierCKeys';
+import { ModelSelector } from './ModelSelector';
 
 function ParserBadge({ parser, degraded }: { parser: string; degraded?: boolean }) {
   const info = parserDisplay(parser);
@@ -38,6 +38,7 @@ interface TierBUploadProps {
   documents: UploadedDoc[];
   onRequestDelete: () => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
+  llmConfig?: LLMConfig | null;
   onKeyConfigChange?: (config: LLMConfig | null) => void;
   onAskExample?: (q: string) => void;
   onStartIngest: (file: File) => void;
@@ -50,6 +51,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   documents,
   onRequestDelete,
   onToast,
+  llmConfig = null,
   onKeyConfigChange,
   onAskExample,
   onStartIngest,
@@ -258,36 +260,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
           </div>
         )}
 
-        {/* Optional BYOK API Key Checkbox & Slide-down Zone */}
-        <div className="pt-2 border-t border-border/60 space-y-3">
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground select-none">
-            <input
-              type="checkbox"
-              checked={useCustomKey}
-              onChange={(e) => handleToggleCustomKey(e.target.checked)}
-              className="size-4 shrink-0 rounded border-border text-primary focus:ring-primary cursor-pointer accent-primary"
-            />
-            <span>I want to use my own LLM API Key (Optional)</span>
-          </label>
-
-          <AnimatePresence>
-            {useCustomKey && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.22, ease: 'easeOut' }}
-                className="overflow-hidden pt-1"
-              >
-                <TierCKeys
-                  onToast={onToast}
-                  onKeyConfigChange={(cfg) => {
-                    onKeyConfigChange?.(cfg);
-                  }}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
+        {/* Universal Model Selector (Cloud Default, Local Ollama, or Cloud BYOK) */}
+        <div className="pt-2 border-t border-border/60">
+          <ModelSelector
+            config={llmConfig}
+            onChange={(cfg) => onKeyConfigChange?.(cfg)}
+            onToast={onToast}
+            sectionContext="upload"
+          />
         </div>
       </div>
 

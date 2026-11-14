@@ -212,13 +212,26 @@ class HybridSearchPipeline:
     ) -> RetrievedChunk:
         """Map raw Qdrant scored payload to typed RetrievedChunk."""
         payload = candidate.get("payload", {})
+        raw_page = (
+            payload.get("page")
+            or payload.get("page_number")
+            or payload.get("page_start")
+            or (payload.get("metadata") or {}).get("page")
+        )
+        page_val = 1
+        if raw_page is not None:
+            try:
+                page_val = max(1, int(raw_page))
+            except (TypeError, ValueError):
+                page_val = 1
+
         return RetrievedChunk(
             chunk_id=payload.get("chunk_id", ""),
             doc_id=payload.get("doc_id", ""),
             parent_id=payload.get("parent_id", ""),
             title=payload.get("title", ""),
             breadcrumb=payload.get("breadcrumb", ""),
-            page=payload.get("page", 1),
+            page=page_val,
             bbox=payload.get("bbox"),
             display_text=payload.get("display_text", ""),
             embedding_text=payload.get("embedding_text", ""),

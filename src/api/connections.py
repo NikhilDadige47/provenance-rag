@@ -32,9 +32,12 @@ PROVIDER_PROBE_URLS = {
 
 class ConnectionTestRequest(BaseModel):
     provider: str = Field(
-        description="Name of the provider (e.g., llamaparse, groq, openai, cohere)"
+        description="Name of the provider (e.g., llamaparse, groq, openai, cohere, ollama)"
     )
-    key: Secret = Field(description="API key to validate")
+    key: Secret | None = Field(default=None, description="API key to validate")
+    base_url: str | None = Field(
+        default=None, description="Custom base URL for local/OpenAI-compatible endpoints"
+    )
 
 
 class ConnectionTestResponse(BaseModel):
@@ -47,15 +50,55 @@ class ConnectionTestResponse(BaseModel):
 
 async def verify_provider_connection(
     provider: str,
-    key: Secret,
+    key: Secret | None = None,
     client: httpx.AsyncClient | None = None,
+    base_url: str | None = None,
 ) -> ConnectionTestResponse:
-    """Validate a provider key with the cheapest non-credit-consuming call."""
+    """Validate a provider key or local endpoint with the cheapest non-credit-consuming call."""
     provider_clean = provider.strip().lower()
 
     # Free local parsers and owner-paid auto waterfall don't need a visitor key
-    if provider_clean in {"local_pymupdf", "local", "auto"}:
+    if provider_clean in {"local_pymupdf", "auto"}:
         return ConnectionTestResponse(ok=True, provider=provider_clean)
+
+    # Local LLMs (Ollama, LM Studio, LocalAI)
+    if provider_clean in {"ollama", "local", "lmstudio"}:
+        probe_base = (base_url or "http://localhost:11434/v1").strip().rstrip("/")
+        if not probe_base.endswith("/v1"):
+            probe_base = f"{probe_base}/v1"
+        probe_url = f"{probe_base}/models"
+        headers: dict[str, str] = {}
+        if key and key.reveal():
+            headers["Authorization"] = f"Bearer {key.reveal()}"
+
+        local_client = create_secure_client(allow_local_llm=True)
+        try:
+            response = await local_client.get(probe_url, headers=headers, timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                models: list[str] = []
+                if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+                    models = [m["id"] for m in data["data"] if isinstance(m, dict) and "id" in m]
+                return ConnectionTestResponse(
+                    ok=True,
+                    provider=provider_clean,
+                    models=models if models else ["llama3.1:8b"],
+                )
+            return ConnectionTestResponse(
+                ok=False,
+                provider=provider_clean,
+                error=f"Local endpoint returned status {response.status_code}.",
+                hint="Verify that Ollama or LM Studio is serving on the specified URL.",
+            )
+        except Exception as exc:
+            return ConnectionTestResponse(
+                ok=False,
+                provider=provider_clean,
+                error=f"Unable to connect to local model server at {probe_base}.",
+                hint="Ensure your local model runner is running (e.g. 'ollama serve' or LM Studio local server).",
+            )
+        finally:
+            await local_client.aclose()
 
     if provider_clean not in PROVIDER_PROBE_URLS:
         return ConnectionTestResponse(

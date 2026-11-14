@@ -8,6 +8,14 @@ export interface SourceCard {
   snippet: string;
 }
 
+export interface PipelineStageTrace {
+  id: string;
+  title: string;
+  latency_ms: number;
+  status: 'done' | 'failed' | 'skipped';
+  details: string[];
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -22,6 +30,7 @@ export interface ChatMessage {
   used_visitor_key?: boolean;
   model_used?: string;
   traceStages?: PipelineStageInfo[];
+  trace_stages?: PipelineStageTrace[];
 }
 
 export interface PipelineStageInfo {
@@ -94,7 +103,9 @@ export interface CostEstimate {
 }
 
 export interface LLMConfig {
-  provider: 'groq' | 'openai' | 'anthropic' | 'gemini' | 'mistral';
+  provider: 'groq' | 'openai' | 'anthropic' | 'gemini' | 'mistral' | 'ollama' | 'local' | 'lmstudio';
   model: string;
   key: string;
+  baseUrl?: string;
+  isLocal?: boolean;
 }

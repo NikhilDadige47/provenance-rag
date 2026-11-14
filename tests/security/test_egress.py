@@ -56,9 +56,21 @@ def test_local_qdrant_exception() -> None:
     assert validate_egress_url("http://localhost:6333/collections", allow_local_qdrant=True)
     assert validate_egress_url("http://127.0.0.1:6333/collections", allow_local_qdrant=True)
 
-    # But blocked when allow_local_qdrant is False
+    # Local LLMs (Ollama/LM Studio) allowed when allow_local_llm=True
+    assert validate_egress_url(
+        "http://localhost:11434/v1/chat/completions",
+        allow_local_qdrant=False,
+        allow_local_llm=True,
+    )
+    assert validate_egress_url(
+        "http://127.0.0.1:1234/v1/models",
+        allow_local_qdrant=False,
+        allow_local_llm=True,
+    )
+
+    # But blocked when allow_local_qdrant and allow_local_llm are False
     with pytest.raises(EgressBlockedError):
-        validate_egress_url("http://localhost:6333/collections", allow_local_qdrant=False)
+        validate_egress_url("http://localhost:6333/collections", allow_local_qdrant=False, allow_local_llm=False)
 
 
 @pytest.mark.asyncio
