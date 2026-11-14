@@ -70,7 +70,7 @@ export const TierADemo: React.FC<TierADemoProps> = ({
       : FALLBACK_QUESTIONS;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2 sm:space-y-3">
       {/* Universal Model Selector */}
       <ModelSelector
         config={llmConfig}
@@ -79,18 +79,18 @@ export const TierADemo: React.FC<TierADemoProps> = ({
         sectionContext="demo"
       />
 
-      <div className="border border-border rounded-lg p-3 surface-inset shadow-sm space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="border border-border rounded-lg p-2.5 sm:p-3 surface-inset shadow-xs space-y-2 sm:space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-3.5 text-emerald-600 shrink-0" />
-            <h3 className="font-semibold text-sm">Pre-Indexed Demo Corpus</h3>
+            <h3 className="font-semibold text-xs sm:text-sm">Pre-Indexed Demo Corpus</h3>
           </div>
           <span className="text-[10px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-1.5 py-px rounded-full whitespace-nowrap shrink-0 font-medium">
             Ready
           </span>
         </div>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
           Apple financial reports (Form 10-K, FY2023–FY2025). Click a filing to preview, or a question to query.
         </p>
 
@@ -100,7 +100,7 @@ export const TierADemo: React.FC<TierADemoProps> = ({
               key={doc.filename}
               type="button"
               onClick={() => setSelectedDoc(doc)}
-              className="min-h-11 min-w-0 rounded-md border border-border/70 bg-muted/15 hover:bg-muted/40 hover:border-primary/40 transition-colors cursor-pointer px-1.5 py-2 flex items-center gap-1.5 text-left group"
+              className="min-h-9 sm:min-h-11 min-w-0 rounded-md border border-border/70 bg-muted/15 hover:bg-muted/40 hover:border-primary/40 transition-colors cursor-pointer px-1.5 py-1.5 sm:py-2 flex items-center gap-1.5 text-left group"
               title={`Click to preview ${doc.title}`}
             >
               <FileText className="size-3 text-muted-foreground group-hover:text-primary shrink-0" />
@@ -114,7 +114,7 @@ export const TierADemo: React.FC<TierADemoProps> = ({
           ))}
         </div>
 
-        <div className="space-y-1.5 pt-2 border-t border-border/40">
+        <div className="space-y-1.5 pt-1.5 sm:pt-2 border-t border-border/40">
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-foreground">
             <HelpCircle className="size-3 text-primary" />
             <span>Sample questions</span>
@@ -122,13 +122,13 @@ export const TierADemo: React.FC<TierADemoProps> = ({
               {sampleQuestions.length}
             </span>
           </div>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 sm:gap-1">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-1">
             {sampleQuestions.map((q, idx) => (
               <button
                 key={`${idx}-${q}`}
                 type="button"
                 onClick={() => onAskExample(q)}
-                className="min-h-11 w-full text-left text-xs sm:text-[11px] leading-snug bg-muted/30 hover:bg-muted border border-border/60 hover:border-primary/40 rounded-md px-2.5 py-2.5 sm:px-1.5 sm:py-1 transition-colors text-muted-foreground hover:text-foreground flex items-start gap-1.5 group cursor-pointer"
+                className="min-h-9 sm:min-h-11 w-full text-left text-xs sm:text-[11px] leading-snug bg-muted/30 hover:bg-muted border border-border/60 hover:border-primary/40 rounded-md px-2 py-1.5 sm:px-1.5 sm:py-1 transition-colors text-muted-foreground hover:text-foreground flex items-start gap-1.5 group cursor-pointer"
               >
                 <span className="line-clamp-2 flex-1 min-w-0">{q}</span>
                 <ArrowRight className="size-2.5 mt-0.5 opacity-30 group-hover:opacity-100 group-hover:text-primary transition-opacity shrink-0" />

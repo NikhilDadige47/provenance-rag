@@ -281,6 +281,7 @@ def _apply_security_headers(request: Request, response: Any) -> None:
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: blob:; "
             "connect-src 'self'; "
+            "worker-src 'self' blob:; "
             "frame-src 'self' blob:; "
             "object-src 'self' blob:; "
             "frame-ancestors 'none'; "

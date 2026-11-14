@@ -39,16 +39,16 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
 }) => {
   return (
     <header className="lg:hidden shrink-0 border-b border-border surface-header pt-[env(safe-area-inset-top)] z-30">
-      <div className="flex h-12 items-center gap-2 px-3">
+      <div className="flex h-10 sm:h-12 items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3">
         <button
           type="button"
           onClick={onBrandClick}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left"
+          className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2 rounded-md text-left"
           title="Back to overview"
         >
-          <img src={logoImg} alt="" className="size-8 shrink-0 rounded-lg object-contain" />
+          <img src={logoImg} alt="" className="size-6 sm:size-8 shrink-0 rounded-md sm:rounded-lg object-contain" />
           <span
-            className="truncate text-sm font-bold tracking-tight"
+            className="truncate text-xs sm:text-sm font-bold tracking-tight"
             style={{ fontFamily: "'Poppins', sans-serif" }}
           >
             Provenance
@@ -67,9 +67,9 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
           type="button"
           onClick={onToggleTheme}
           aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-          className="flex size-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex size-8 sm:size-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
         >
-          {theme === 'light' ? <Moon className="size-4" /> : <Sun className="size-4" />}
+          {theme === 'light' ? <Moon className="size-3.5 sm:size-4" /> : <Sun className="size-3.5 sm:size-4" />}
         </button>
       </div>
     </header>
@@ -91,11 +91,11 @@ export const MobilePaneSwitch: React.FC<MobilePaneSwitchProps> = ({
   const contextLabel = activeNav === 'tier_b' ? 'Document' : 'Questions';
 
   return (
-    <div className="lg:hidden shrink-0 border-b border-border surface-header px-3 py-2">
+    <div className="lg:hidden shrink-0 border-b border-border surface-header px-2.5 py-1 sm:px-3 sm:py-2">
       <div
         role="tablist"
         aria-label="Workspace view"
-        className="grid grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1"
+        className="grid grid-cols-2 gap-1 rounded-lg sm:rounded-xl bg-muted/80 p-0.5 sm:p-1"
       >
         <PaneTab
           selected={pane === 'context'}
@@ -123,9 +123,9 @@ function PaneTab({
       role="tab"
       aria-selected={selected}
       onClick={onClick}
-      className={`h-9 rounded-lg text-[13px] font-semibold transition-colors ${
+      className={`h-7 sm:h-9 rounded-md sm:rounded-lg text-xs sm:text-[13px] font-semibold transition-colors ${
         selected
-          ? 'bg-card text-foreground shadow-sm'
+          ? 'bg-card text-foreground shadow-xs'
           : 'text-muted-foreground hover:text-foreground'
       }`}
     >
@@ -163,25 +163,25 @@ export const MobileTabBar: React.FC<MobileTabBarProps> = ({
               onClick={() => onSelectNav(tab.id)}
               aria-current={isActive ? 'page' : undefined}
               aria-disabled={isLocked}
-              className={`flex h-14 flex-col items-center justify-center gap-0.5 ${
+              className={`flex h-11 sm:h-14 flex-col items-center justify-center gap-0.5 ${
                 isLocked ? 'opacity-50' : isActive ? 'text-primary' : 'text-muted-foreground'
               }`}
             >
               <span
-                className={`relative flex size-8 items-center justify-center rounded-lg ${
+                className={`relative flex size-6 sm:size-8 items-center justify-center rounded-md sm:rounded-lg ${
                   isActive && !isLocked ? 'bg-primary text-primary-foreground' : ''
                 }`}
               >
                 {isLocked ? (
-                  <Lock className="size-[18px]" strokeWidth={2.25} />
+                  <Lock className="size-3.5 sm:size-[18px]" strokeWidth={2.25} />
                 ) : (
-                  <Icon className="size-[18px]" strokeWidth={2.25} />
+                  <Icon className="size-3.5 sm:size-[18px]" strokeWidth={2.25} />
                 )}
                 {tab.id === 'tier_b' && isIngesting && (
                   <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary" />
                 )}
               </span>
-              <span className={`text-[10px] leading-none ${isActive ? 'font-semibold' : 'font-medium'}`}>
+              <span className={`text-[9px] sm:text-[10px] leading-none ${isActive ? 'font-semibold' : 'font-medium'}`}>
                 {tab.label}
               </span>
             </button>

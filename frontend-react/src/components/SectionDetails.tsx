@@ -121,7 +121,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
       )}
 
       {/* Dynamic Content Panel */}
-      <div className="p-3 sm:p-4 space-y-4 flex-1 min-h-0 overflow-y-auto">
+      <div className="p-2.5 sm:p-4 space-y-2.5 sm:space-y-4 flex-1 min-h-0 overflow-y-auto">
         {ingest && ingest.phase !== 'done' && ingest.phase !== 'error' && activeNav !== 'tier_b' && (
           <button
             type="button"

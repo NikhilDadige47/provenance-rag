@@ -68,6 +68,18 @@ def test_local_qdrant_exception() -> None:
         allow_local_llm=True,
     )
 
+    # Secure developer tunnels allowed for local LLM runners
+    assert validate_egress_url(
+        "https://my-ollama-runner.ngrok-free.app/v1/models",
+        allow_local_qdrant=False,
+        allow_local_llm=True,
+    )
+    assert validate_egress_url(
+        "https://ai-workstation.trycloudflare.com/v1/models",
+        allow_local_qdrant=False,
+        allow_local_llm=True,
+    )
+
     # But blocked when allow_local_qdrant and allow_local_llm are False
     with pytest.raises(EgressBlockedError):
         validate_egress_url("http://localhost:6333/collections", allow_local_qdrant=False, allow_local_llm=False)

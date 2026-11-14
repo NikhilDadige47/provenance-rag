@@ -404,19 +404,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         ref={chatScrollRef}
         className={`flex-1 min-h-0 ${
           messages.length === 0 && !isLoading
-            ? 'flex flex-col items-center justify-center p-6 overflow-hidden'
-            : 'overflow-y-auto p-4 space-y-4'
+            ? 'flex flex-col items-center justify-center p-3 sm:p-6 overflow-hidden'
+            : 'overflow-y-auto p-2.5 sm:p-4 space-y-2.5 sm:space-y-4'
         }`}
       >
         {messages.length === 0 && !isLoading ? (
-          <div className="flex flex-col items-center justify-center text-center select-none gap-3 px-4">
+          <div className="flex flex-col items-center justify-center text-center select-none gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-0">
             <img
               src={queryHistoryIcon}
               alt=""
               title="History icon from Flaticon"
-              className="size-20 object-contain opacity-90 dark:invert"
+              className="size-12 sm:size-16 object-contain opacity-90 dark:invert"
             />
-            <h4 className="font-medium text-sm text-muted-foreground tracking-tight">
+            <h4 className="font-medium text-xs sm:text-sm text-muted-foreground tracking-tight">
               What do you want to know?
             </h4>
             {compact && onShowContext && !isLocked && !isProcessing && (
@@ -547,7 +547,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       </div>
 
       {/* Input Bar with Smart States */}
-      <div className="px-3 sm:px-4 py-2.5 border-t border-border surface-header shrink-0">
+      <div className="px-2.5 sm:px-4 py-1.5 sm:py-2.5 border-t border-border surface-header shrink-0">
         {/* Processing State Banner */}
         {isProcessing && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary mb-2.5 font-medium animate-pulse">

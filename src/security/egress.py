@@ -65,6 +65,22 @@ def validate_egress_url(
     if (allow_local_qdrant or allow_local_llm) and host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
         return url
 
+    # Allow secure HTTPS tunnels (ngrok, cloudflare) for developer local model access from cloud deployments
+    if allow_local_llm and any(
+        host.endswith(suffix) or host == suffix.lstrip(".")
+        for suffix in (
+            ".ngrok-free.app",
+            ".ngrok.io",
+            ".trycloudflare.com",
+            ".loca.lt",
+        )
+    ):
+        if scheme != "https":
+            raise EgressBlockedError(
+                f"Insecure scheme '{scheme}' for tunnel host '{host}'. Only HTTPS is permitted."
+            )
+        return url
+
     # Require HTTPS for all external cloud egress
     if scheme != "https":
         raise EgressBlockedError(

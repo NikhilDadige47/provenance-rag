@@ -307,25 +307,25 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const renderCurrentModelSummary = () => {
     if (config?.isLocal) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <Laptop className="size-3" />
-          Local ({config.model})
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink min-w-0 max-w-[150px] sm:max-w-[220px]">
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <Laptop className="size-3 shrink-0" />
+          <span className="truncate whitespace-nowrap">Local ({config.model})</span>
         </span>
       );
     }
     if (config?.key) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-          <Key className="size-3" />
-          BYOK ({config.provider.toUpperCase()}: {config.model})
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 shrink min-w-0 max-w-[150px] sm:max-w-[220px]">
+          <Key className="size-3 shrink-0" />
+          <span className="truncate whitespace-nowrap">BYOK ({config.provider.toUpperCase()}: {config.model})</span>
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-        <Sparkles className="size-3" />
-        Default (Groq Llama 3.3 70B)
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20 shrink min-w-0 max-w-[160px] sm:max-w-[240px]">
+        <Sparkles className="size-3 shrink-0" />
+        <span className="truncate whitespace-nowrap">Default (Groq Llama 3.3 70B)</span>
       </span>
     );
   };
@@ -334,12 +334,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     <div className="w-full rounded-xl border border-border bg-card/60 backdrop-blur-sm overflow-hidden transition-all shadow-sm">
       {/* Header Bar / Summary Clickable */}
       <div
-        className="px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-muted/40 transition-colors select-none"
+        className="px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between cursor-pointer hover:bg-muted/40 transition-colors select-none"
         onClick={() => setIsOpen((prev) => !prev)}
       >
         <div className="flex items-center gap-2 min-w-0 pr-2">
           <Cpu className="size-4 text-primary shrink-0" />
-          <span className="text-xs font-semibold text-foreground truncate">
+          <span className="text-xs font-semibold text-foreground truncate shrink-0">
             Inference Model
           </span>
           {renderCurrentModelSummary()}
@@ -365,7 +365,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       {/* Expanded Panel */}
       {isOpen && (
-        <div className="p-3.5 border-t border-border space-y-3.5 bg-card/90">
+        <div className="p-2.5 sm:p-3.5 border-t border-border space-y-2.5 sm:space-y-3.5 bg-card/90">
           {/* Tabs */}
           <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted/60 rounded-lg border border-border/50 text-xs font-medium">
             <button
@@ -471,6 +471,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <span>{isTestingLocal ? 'Connecting...' : 'Test & Discover'}</span>
                   </Button>
                 </div>
+                <p className="text-[10.5px] text-muted-foreground leading-normal">
+                  Running on your laptop? Use <code className="font-mono text-[10px] bg-muted/60 px-1 py-0.5 rounded">http://localhost:11434/v1</code>. Accessing from Render cloud? Use an ngrok or Cloudflare tunnel URL (e.g. <code className="font-mono text-[10px] bg-muted/60 px-1 py-0.5 rounded">https://xyz.ngrok-free.app/v1</code>).
+                </p>
               </div>
 
               {/* Test Status Banner */}
