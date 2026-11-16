@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Gauge, Lock, Moon, Sun, UploadCloud, type LucideIcon } from 'lucide-react';
+import { Eye, Gauge, Lock, Moon, Sun, UploadCloud, Cpu, type LucideIcon } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { UsageInfo } from '../types';
 import { NavItem } from './NavSidebar';
@@ -12,9 +12,10 @@ const TABS: {
   label: string;
   icon: LucideIcon;
 }[] = [
-  { id: 'tier_a', label: 'Demo', icon: Eye },
+  { id: 'tier_a', label: 'Sample', icon: Eye },
   { id: 'tier_b', label: 'Upload', icon: UploadCloud },
-  { id: 'limits', label: 'Limits', icon: Gauge },
+  { id: 'models', label: 'AI Model', icon: Cpu },
+  { id: 'limits', label: 'Usage', icon: Gauge },
 ];
 
 interface MobileTopBarProps {
@@ -88,7 +89,14 @@ export const MobilePaneSwitch: React.FC<MobilePaneSwitchProps> = ({
   pane,
   onChange,
 }) => {
-  const contextLabel = activeNav === 'tier_b' ? 'Document' : 'Questions';
+  const contextLabel =
+    activeNav === 'tier_b'
+      ? 'Document'
+      : activeNav === 'models'
+        ? 'AI Model'
+        : activeNav === 'limits'
+          ? 'Usage'
+          : 'Questions';
 
   return (
     <div className="lg:hidden shrink-0 border-b border-border surface-header px-2.5 py-1 sm:px-3 sm:py-2">
@@ -151,7 +159,7 @@ export const MobileTabBar: React.FC<MobileTabBarProps> = ({
       className="lg:hidden shrink-0 border-t border-border surface-header pb-[env(safe-area-inset-bottom)] z-30"
       aria-label="Workspace"
     >
-      <div className="grid grid-cols-3">
+      <div className="grid grid-cols-4">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeNav === tab.id;

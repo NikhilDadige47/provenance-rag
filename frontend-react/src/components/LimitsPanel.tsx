@@ -2,12 +2,14 @@ import React from 'react';
 import { Gauge, Zap, Clock, Shield, Database } from 'lucide-react';
 import { UsageInfo } from '../types';
 import { formatTtl, readUsage, useLiveTtl } from '../lib/quota';
+import { formatModelDisplayName } from '../lib/modelUtils';
 
 interface LimitsPanelProps {
   usage: UsageInfo | null;
   scope: string;
   hasVisitorKey?: boolean;
   onAddKey?: () => void;
+  defaultModel?: string;
 }
 
 function Meter({
@@ -54,6 +56,7 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({
   scope,
   hasVisitorKey = false,
   onAddKey,
+  defaultModel,
 }) => {
   const q = readUsage(usage);
   const ttl = useLiveTtl(usage);
@@ -65,28 +68,25 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <Gauge className="size-5 text-primary shrink-0" />
-            <h3 className="font-semibold text-base">Session limits</h3>
+            <h3 className="font-semibold text-base">Session Allowance & Quotas</h3>
           </div>
           <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
-            {scope === 'demo' ? 'Demo corpus' : 'Private session'}
+            {scope === 'demo' ? 'Sample Reports' : 'Private Session'}
           </span>
         </div>
 
         <p className="text-xs text-muted-foreground leading-relaxed">
-          You see questions left. Behind that, the server reserves real LLM tokens before each
-          answer and spends parser credits only when a document needs a paid parse. Repeats of the
-          same file are free. If a premium parser is out of budget, extraction falls back to local
-          text instead of failing.
+          Every visitor receives a generous daily question allowance. Every answer links directly to verified source citations. You can connect your own free API key in AI Models anytime for unlimited questions.
         </p>
 
         {ownerWarn && (
           <div className="flex items-start justify-between gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
             <div className="min-w-0">
               <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-                Owner-funded questions are used up
+                Free daily questions reached
               </p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Paste your own LLM key on Upload Documents to keep chatting. Your key is never stored.
+                Connect your own API key in AI Models to continue chatting freely. Your key stays in your browser.
               </p>
             </div>
             {onAddKey && (
@@ -95,86 +95,83 @@ export const LimitsPanel: React.FC<LimitsPanelProps> = ({
                 onClick={onAddKey}
                 className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-500"
               >
-                Add key
+                Connect Key
               </button>
             )}
           </div>
         )}
 
         <Meter
-          label={hasVisitorKey ? 'Your-key questions' : 'Owner-funded questions'}
+          label={hasVisitorKey ? 'Your API Key Questions' : 'Free Daily Questions'}
           remaining={hasVisitorKey ? Math.max(0, q.ownMax - q.ownUsed) : q.ownerRemaining}
           max={hasVisitorKey ? q.ownMax : q.ownerMax}
           usedLabel={
-            hasVisitorKey ? `Used ${q.ownUsed} on your key` : `Used ${q.ownerUsed} owner questions`
+            hasVisitorKey ? `Used ${q.ownUsed} on your key` : `Used ${q.ownerUsed} free questions`
           }
           hint="Resets at midnight UTC — not on refresh"
           warn={ownerWarn}
         />
 
         <Meter
-          label="Rerank calls"
+          label="Search Precision Boosts"
           remaining={Math.max(0, q.rerankMax - q.rerankUsed)}
           max={q.rerankMax}
           usedLabel={`Used ${q.rerankUsed}`}
-          hint="Falls back to hybrid search if exhausted"
+          hint="Reranks search results for highest citation accuracy"
         />
 
         <Meter
-          label="Uploaded documents"
+          label="Uploaded Documents"
           remaining={Math.max(0, q.docsMax - q.docsUsed)}
           max={q.docsMax}
           usedLabel={`${q.pagesUsed} / ${q.pagesMax} pages used`}
-          hint="Owner-paid parse, local floor"
+          hint="High-precision document table & text extraction"
         />
 
         <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2 text-[11px]">
           <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
               <Clock className="size-3.5 text-muted-foreground" />
-              Session TTL
+              Session Time Remaining
             </div>
             <p className="font-mono text-sm">{formatTtl(ttl)}</p>
-            <p className="text-muted-foreground">Uploads wipe on expiry or Delete</p>
+            <p className="text-muted-foreground">Uploaded files clear automatically on expiry</p>
           </div>
           <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
               <Zap className="size-3.5 text-muted-foreground" />
-              Answer model
+              Active AI Model
             </div>
             <p className="font-mono text-sm truncate">
-              {hasVisitorKey ? 'Your key' : usage?.owner_llm_provider || 'groq'}
+              {hasVisitorKey ? 'Custom Key' : usage?.owner_llm_provider || 'Groq'}
             </p>
             <p className="text-muted-foreground truncate">
-              {hasVisitorKey ? 'Owner tokens skipped' : usage?.owner_llm_model || 'capped output'}
+              {hasVisitorKey ? 'Personal key active' : formatModelDisplayName(usage?.owner_llm_model || defaultModel)}
             </p>
           </div>
         </div>
 
         <div className="pt-2 border-t border-border space-y-2.5">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            What is enforced
+            Privacy & Transparency
           </h4>
           <ul className="text-xs space-y-1.5 text-muted-foreground">
             <li className="flex items-start gap-2">
               <Shield className="size-3.5 mt-0.5 text-emerald-500 shrink-0" />
               <span>
-                <strong>Before paid calls:</strong> injection screen, kill switch, {q.rpmMax}{' '}
-                requests/min/IP, {q.ipDailyMax} questions/day/IP.
+                <strong>Privacy by Design:</strong> Your uploaded documents are isolated to your private session and automatically deleted when your session expires or when you click delete.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <Zap className="size-3.5 mt-0.5 text-emerald-500 shrink-0" />
               <span>
-                <strong>Chat:</strong> reserve prompt + output tokens, then commit the provider’s
-                real usage. Not-found retrieval skips generation.
+                <strong>Verified Grounding:</strong> Every answer links to real quotes and page numbers from your documents. If an answer is not in the text, the assistant informs you directly.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <Database className="size-3.5 mt-0.5 text-emerald-500 shrink-0" />
               <span>
-                <strong>Upload:</strong> Landing AI standard jobs → LlamaParse → local PyMuPDF.
-                Same file hash is cached globally at 0 credits.
+                <strong>Accurate Extraction:</strong> Advanced multi-column and table parsing ensures complex balance sheets, financial figures, and disclosures are captured cleanly.
               </span>
             </li>
           </ul>

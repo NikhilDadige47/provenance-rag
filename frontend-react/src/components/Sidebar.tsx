@@ -44,18 +44,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const tabs = [
     {
       id: 'tier_a' as AccessTier,
-      title: 'Demo Corpus',
-      desc: 'Free queries over pre-indexed corpus',
+      title: 'Sample Reports',
+      desc: 'Free questions over Apple annual filings',
       icon: Eye,
-      badge: 'Free Instant',
+      badge: 'Free Demo',
       badgeColor: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
     },
     {
       id: 'tier_b' as AccessTier,
-      title: 'Upload Documents',
-      desc: 'Direct PDF upload with isolated session scope & optional BYOK',
+      title: 'Your Documents',
+      desc: 'Upload custom PDFs & ask questions with source citations',
       icon: UploadCloud,
-      badge: 'Session',
+      badge: 'Private',
       badgeColor: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
     },
   ];
@@ -88,11 +88,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="font-bold font-poppins tracking-tight text-base sm:text-[17px]" style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Provenance RAG</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border">
-                  v2.1
+                  Verified AI
                 </span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
-                Hybrid Retrieval Architecture
+                Verified Source Citations
               </p>
             </div>
           </div>

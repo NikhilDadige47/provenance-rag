@@ -15,16 +15,21 @@ import {
   Sparkles,
   Server,
   ShieldCheck,
+  Edit3,
+  Copy,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { LLMConfig } from '../types';
 import { api } from '../lib/api';
+import { formatModelDisplayName, formatDefaultModelLabel } from '../lib/modelUtils';
 
 export interface ModelSelectorProps {
   config: LLMConfig | null;
   onChange: (config: LLMConfig | null) => void;
   onToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
-  sectionContext?: 'demo' | 'upload';
+  sectionContext?: 'demo' | 'upload' | 'standalone';
+  defaultModel?: string;
+  defaultProvider?: string;
 }
 
 interface ModelItem {
@@ -35,6 +40,7 @@ interface ModelItem {
 
 const CLOUD_MODELS: Record<string, ModelItem[]> = {
   groq: [
+    { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B', desc: '120B parameter reasoning model on Groq' },
     { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile', desc: 'Recommended: 128k context, top reasoning' },
     { id: 'llama-3.1-70b-versatile', label: 'Llama 3.1 70B Versatile', desc: '128k context, high quality' },
     { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant', desc: 'Ultra-low latency, 128k context' },
@@ -92,9 +98,9 @@ export function getModelTierInfo(modelName: string): {
 
   if (isMicro) {
     return {
-      tier: 'Micro Model (≤3B)',
-      badge: '⚡ Ultra-Fast • Top 2 Passages',
-      desc: 'Context pruned to top 2 passages for sub-second prefill TTFT and 1-shot grounding directive.',
+      tier: 'Compact & Fast (≤3B)',
+      badge: '⚡ Instant Speed',
+      desc: 'Extremely fast responses. Best for quick summaries and straightforward questions.',
       colorClass: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20',
     };
   }
@@ -105,17 +111,17 @@ export function getModelTierInfo(modelName: string): {
 
   if (isMid) {
     return {
-      tier: 'Mid-Sized Model (7B–14B)',
-      badge: '⚖️ Balanced • Top 3 Passages',
-      desc: 'Balanced context expansion (top 3 passages) for fast local CPU/GPU inference and high precision.',
+      tier: 'Balanced AI (7B–14B)',
+      badge: '⚖️ Balanced Speed & Detail',
+      desc: 'Great everyday balance between fast typing speed and thorough explanations.',
       colorClass: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
     };
   }
 
   return {
-    tier: 'Frontier / High-Capacity (70B+)',
-    badge: '🧠 Full Reasoning • Top 5 Passages',
-    desc: 'Full context expansion (top 5 passages) and multi-header markdown synthesis.',
+    tier: 'Deep Reasoning (70B+ / Flagship)',
+    badge: '🧠 Deep Comprehension',
+    desc: 'Highest accuracy and depth. Best for complex financial tables and detailed synthesis.',
     colorClass: 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/20',
   };
 }
@@ -127,8 +133,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onChange,
   onToast,
   sectionContext = 'demo',
+  defaultModel = 'openai/gpt-oss-120b',
+  defaultProvider = 'groq',
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(sectionContext === 'standalone');
 
   // Tab state
   const initialTab: ModelTab = config?.isLocal
@@ -160,12 +168,30 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [cloudModel, setCloudModel] = useState(
     !config?.isLocal && config?.model ? config.model : 'llama-3.3-70b-versatile'
   );
+  const [discoveredCloudModels, setDiscoveredCloudModels] = useState<string[]>([]);
+  const [isCustomCloudModel, setIsCustomCloudModel] = useState(false);
+  const [customCloudModelValue, setCustomCloudModelValue] = useState('');
   const [isTestingCloud, setIsTestingCloud] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<{
     tested: boolean;
     success: boolean;
     message: string;
   } | null>(null);
+
+  const isKeyVerified = Boolean(
+    cloudStatus?.success ||
+      (config?.key &&
+        config?.provider === cloudProvider &&
+        cloudKey === config.key &&
+        cloudStatus === null)
+  );
+
+  const isLocalVerified = Boolean(
+    localStatus?.success ||
+      (config?.isLocal &&
+        config?.baseUrl === localUrl &&
+        localStatus === null)
+  );
 
   // Keep internal state aligned if config prop changes
   useEffect(() => {
@@ -177,18 +203,71 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       setActiveTab('byok');
       setCloudKey(config.key);
       if (config.provider) setCloudProvider(config.provider as any);
-      if (config.model) setCloudModel(config.model);
+      if (config.model) {
+        setCloudModel(config.model);
+        const known = CLOUD_MODELS[config.provider as any] || [];
+        if (!known.some((m) => m.id === config.model)) {
+          setIsCustomCloudModel(true);
+          setCustomCloudModelValue(config.model);
+        }
+      }
     } else {
       setActiveTab('default');
     }
   }, [config]);
 
-  // Test local Ollama connection and auto-fetch tags
+  // Test local Ollama connection and auto-fetch tags (browser direct + backend fallback)
   const handleTestLocal = async () => {
     setIsTestingLocal(true);
     setLocalStatus(null);
+    const cleanUrl = localUrl.trim() || 'http://localhost:11434/v1';
+
+    // 1. Try direct browser probe first (critical for Render / cloud deployments so client talks to local Ollama directly)
     try {
-      const res = await api.testConnection('ollama', '', localUrl.trim());
+      const probeBase = cleanUrl.replace(/\/v1\/?$/, '');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      const [resTags, resModels] = await Promise.allSettled([
+        fetch(`${probeBase}/api/tags`, { method: 'GET', signal: controller.signal }),
+        fetch(`${cleanUrl.replace(/\/+$/, '')}/models`, { method: 'GET', signal: controller.signal }),
+      ]);
+      clearTimeout(timeoutId);
+
+      let foundModels: string[] = [];
+      if (resTags.status === 'fulfilled' && resTags.value.ok) {
+        const data = await resTags.value.json().catch(() => null);
+        if (data && Array.isArray(data.models)) {
+          foundModels = data.models.map((m: any) => m.name || m.model).filter(Boolean);
+        }
+      } else if (resModels.status === 'fulfilled' && resModels.value.ok) {
+        const data = await resModels.value.json().catch(() => null);
+        if (data && Array.isArray(data.data)) {
+          foundModels = data.data.map((m: any) => m.id).filter(Boolean);
+        }
+      }
+
+      if (foundModels.length > 0) {
+        setLocalStatus({
+          tested: true,
+          success: true,
+          message: `Connected directly! Found ${foundModels.length} local model(s) on your machine.`,
+        });
+        setDiscoveredModels(foundModels);
+        if (!foundModels.includes(localModel)) {
+          setLocalModel(foundModels[0]);
+        }
+        onToast(`Connected to local Ollama (${foundModels.length} models found).`, 'success');
+        setIsTestingLocal(false);
+        return;
+      }
+    } catch {
+      // Browser direct fetch failed; fall through to backend test
+    }
+
+    // 2. Fall back to backend connection test
+    try {
+      const res = await api.testConnection('ollama', '', cleanUrl);
       if (res.success) {
         setLocalStatus({
           tested: true,
@@ -206,7 +285,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         setLocalStatus({
           tested: true,
           success: false,
-          message: res.message || 'Could not connect to local model endpoint.',
+          message:
+            res.message ||
+            'Could not connect to local model endpoint. Ensure Ollama is running with CORS enabled.',
         });
         onToast(res.message || 'Local connection failed.', 'error');
       }
@@ -233,10 +314,36 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     try {
       const res = await api.testConnection(cloudProvider, cloudKey.trim());
       if (res.success) {
+        let count = 0;
+        if (res.models && res.models.length > 0) {
+          const filtered = res.models.filter((m) => {
+            const lower = m.toLowerCase();
+            return (
+              !lower.includes('whisper') &&
+              !lower.includes('guard') &&
+              !lower.includes('tts') &&
+              !lower.includes('dall-e') &&
+              !lower.includes('embed') &&
+              !lower.includes('imagen') &&
+              !lower.includes('aqa') &&
+              !lower.includes('moderation')
+            );
+          });
+          setDiscoveredCloudModels(filtered);
+          count = filtered.length;
+          if (!filtered.includes(cloudModel) && filtered.length > 0 && !isCustomCloudModel) {
+            const preferred =
+              filtered.find((m) => m.includes('llama-3.3') || m.includes('gpt-4o')) || filtered[0];
+            setCloudModel(preferred);
+          }
+        }
         setCloudStatus({
           tested: true,
           success: true,
-          message: 'API Key successfully verified.',
+          message:
+            count > 0
+              ? `API Key verified (${count} live models available).`
+              : 'API Key successfully verified.',
         });
         onToast(`Verified ${cloudProvider.toUpperCase()} key.`, 'success');
       } else {
@@ -264,12 +371,17 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     if (tabToApply === 'default') {
       onChange(null);
       api.setVisitorKeys(null);
-      onToast('Switched to Cloud Default (Groq Llama 3.3 70B).', 'info');
+      const provName = defaultProvider ? defaultProvider.charAt(0).toUpperCase() + defaultProvider.slice(1) : 'Groq';
+      onToast(`Switched to Cloud Default (${provName} ${formatModelDisplayName(defaultModel)}).`, 'info');
       setIsOpen(false);
       return;
     }
 
     if (tabToApply === 'local') {
+      if (!isLocalVerified) {
+        onToast('Please scan and verify your local Ollama connection before applying.', 'warning');
+        return;
+      }
       const newConfig: LLMConfig = {
         provider: 'ollama',
         model: localModel.trim() || 'llama3.1:8b',
@@ -289,15 +401,27 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         onToast('Please enter an API key for cloud BYOK.', 'warning');
         return;
       }
+      if (!isKeyVerified) {
+        onToast('Please verify your API key before applying.', 'warning');
+        return;
+      }
+      const modelToUse = isCustomCloudModel
+        ? customCloudModelValue.trim() || cloudModel
+        : cloudModel;
+
+      if (!modelToUse) {
+        onToast('Please specify a model.', 'warning');
+        return;
+      }
       const newConfig: LLMConfig = {
         provider: cloudProvider,
-        model: cloudModel,
+        model: modelToUse,
         key: cloudKey.trim(),
         isLocal: false,
       };
       onChange(newConfig);
       api.setVisitorKeys(newConfig);
-      onToast(`Switched to ${cloudProvider.toUpperCase()} (${cloudModel}).`, 'success');
+      onToast(`Switched to ${cloudProvider.toUpperCase()} (${modelToUse}).`, 'success');
       setIsOpen(false);
       return;
     }
@@ -325,7 +449,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20 shrink min-w-0 max-w-[160px] sm:max-w-[240px]">
         <Sparkles className="size-3 shrink-0" />
-        <span className="truncate whitespace-nowrap">Default (Groq Llama 3.3 70B)</span>
+        <span className="truncate whitespace-nowrap">{formatDefaultModelLabel(defaultProvider, defaultModel)}</span>
       </span>
     );
   };
@@ -371,38 +495,35 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('default')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${
-                activeTab === 'default'
+              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${activeTab === 'default'
                   ? 'bg-card text-foreground shadow-xs font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
-              }`}
+                }`}
             >
               <Sparkles className="size-3 text-primary" />
-              <span>Default Cloud</span>
+              <span>Included Cloud AI</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('local')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${
-                activeTab === 'local'
+              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${activeTab === 'local'
                   ? 'bg-card text-foreground shadow-xs font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
-              }`}
+                }`}
             >
               <Laptop className="size-3 text-emerald-500" />
-              <span>Local Model</span>
+              <span>Local Ollama</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('byok')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${
-                activeTab === 'byok'
+              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${activeTab === 'byok'
                   ? 'bg-card text-foreground shadow-xs font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
-              }`}
+                }`}
             >
               <Key className="size-3 text-purple-500" />
-              <span>Cloud BYOK</span>
+              <span>Personal API Key</span>
             </button>
           </div>
 
@@ -412,9 +533,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               <div className="flex items-start gap-2.5">
                 <ShieldCheck className="size-4 text-primary shrink-0 mt-0.5" />
                 <div className="text-xs space-y-1">
-                  <div className="font-semibold text-foreground">Groq Llama 3.3 70B Versatile</div>
+                  <div className="font-semibold text-foreground">
+                    {defaultProvider ? defaultProvider.charAt(0).toUpperCase() + defaultProvider.slice(1) : 'Groq'} {formatModelDisplayName(defaultModel)} (Fast & Accurate)
+                  </div>
                   <p className="text-muted-foreground leading-relaxed">
-                    Pre-configured high-speed inference. Included in your daily session queries with 100% citation tracking and zero configuration required.
+                    Pre-configured high-speed cloud AI. Included free for all questions with exact source citations and zero setup needed.
                   </p>
                 </div>
               </div>
@@ -423,7 +546,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 className="w-full text-xs h-8"
                 onClick={() => handleApply('default')}
               >
-                Use Cloud Default
+                Use Included Cloud AI
               </Button>
             </div>
           )}
@@ -434,9 +557,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               <div className="flex items-start gap-2">
                 <Laptop className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                 <div className="text-xs space-y-0.5">
-                  <div className="font-semibold text-foreground">Self-Hosted Local Inference</div>
+                  <div className="font-semibold text-foreground">Private Local AI (Ollama)</div>
                   <p className="text-muted-foreground text-[11px]">
-                    Connects directly to Ollama, LM Studio, or vLLM. No prompt text leaves your machine.
+                    Runs privately on your own computer. Your questions and document text never leave your machine.
                   </p>
                 </div>
               </div>
@@ -445,13 +568,17 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between">
                   <span>Server URL (OpenAI-compatible)</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">e.g. Ollama: :11434, LM Studio: :1234</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">Default: http://localhost:11434/v1</span>
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={localUrl}
-                    onChange={(e) => setLocalUrl(e.target.value)}
+                    onChange={(e) => {
+                      setLocalUrl(e.target.value);
+                      setLocalStatus(null);
+                      setDiscoveredModels([]);
+                    }}
                     placeholder="http://localhost:11434/v1"
                     className="flex-1 px-2.5 py-1.5 text-xs font-mono rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
                   />
@@ -461,19 +588,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     size="sm"
                     disabled={isTestingLocal}
                     onClick={handleTestLocal}
-                    className="h-8 text-xs shrink-0 flex items-center gap-1.5"
+                    className={`h-8 text-xs shrink-0 flex items-center gap-1.5 transition-colors ${
+                      localStatus?.success
+                        ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                        : ''
+                    }`}
                   >
                     {isTestingLocal ? (
                       <Loader2 className="size-3 animate-spin" />
+                    ) : localStatus?.success ? (
+                      <Check className="size-3" strokeWidth={2.5} />
                     ) : (
                       <RefreshCw className="size-3" />
                     )}
-                    <span>{isTestingLocal ? 'Connecting...' : 'Test & Discover'}</span>
+                    <span>{isTestingLocal ? 'Scanning...' : localStatus?.success ? 'Verified' : 'Connect & Scan'}</span>
                   </Button>
                 </div>
-                <p className="text-[10.5px] text-muted-foreground leading-normal">
-                  Running on your laptop? Use <code className="font-mono text-[10px] bg-muted/60 px-1 py-0.5 rounded">http://localhost:11434/v1</code>. Accessing from Render cloud? Use an ngrok or Cloudflare tunnel URL (e.g. <code className="font-mono text-[10px] bg-muted/60 px-1 py-0.5 rounded">https://xyz.ngrok-free.app/v1</code>).
-                </p>
               </div>
 
               {/* Test Status Banner */}
@@ -494,79 +624,168 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 </div>
               )}
 
-              {/* Model Input / Selection */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted-foreground block">
-                  Model Tag
-                </label>
-                {discoveredModels.length > 0 ? (
-                  <select
-                    value={localModel}
-                    onChange={(e) => setLocalModel(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {discoveredModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    value={localModel}
-                    onChange={(e) => setLocalModel(e.target.value)}
-                    placeholder="llama3.1:8b"
-                    className="w-full px-2.5 py-1.5 text-xs font-mono rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                )}
-
-                {/* Quick suggestions */}
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {POPULAR_LOCAL_MODELS.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setLocalModel(m)}
-                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
-                        localModel === m
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-                {/* Dynamic Model Capability Tier Card */}
-                {(() => {
-                  const tierInfo = getModelTierInfo(localModel);
-                  return (
-                    <div className={`p-2.5 rounded-md border text-xs space-y-1 ${tierInfo.colorClass}`}>
-                      <div className="flex items-center justify-between font-semibold">
-                        <span>{tierInfo.tier}</span>
-                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-background/50 border border-current/20">
-                          {tierInfo.badge}
+              {/* ONLY SHOW MODELS & APPLY AFTER LOCAL CONNECTION IS VERIFIED */}
+              {isLocalVerified ? (
+                <div className="space-y-3 pt-1 border-t border-emerald-500/15">
+                  {/* Model Input / Selection */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-muted-foreground block">
+                        Installed Local Models
+                      </label>
+                      {discoveredModels.length > 0 && (
+                        <span className="text-[9.5px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 leading-none">
+                          {discoveredModels.length} Local Models Found
                         </span>
-                      </div>
-                      <p className="text-[11px] opacity-90 leading-relaxed">{tierInfo.desc}</p>
+                      )}
                     </div>
-                  );
-                })()}
+                    {discoveredModels.length > 0 ? (
+                      <select
+                        value={localModel}
+                        onChange={(e) => setLocalModel(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <optgroup label="Discovered on your machine">
+                          {discoveredModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={localModel}
+                        onChange={(e) => setLocalModel(e.target.value)}
+                        placeholder="llama3.1:8b"
+                        className="w-full px-2.5 py-1.5 text-xs font-mono rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    )}
 
-                <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 pt-0.5">
-                  <span className="shrink-0">💡</span>
-                  <span>Ensure your local runner is active (e.g. <code className="font-mono bg-muted/60 px-1 py-0.5 rounded">ollama serve</code>) before testing.</span>
+                    {/* Quick suggestions */}
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {POPULAR_LOCAL_MODELS.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setLocalModel(m)}
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
+                            localModel === m
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Dynamic Model Capability Tier Card */}
+                    {(() => {
+                      const tierInfo = getModelTierInfo(localModel);
+                      return (
+                        <div className={`p-2.5 rounded-md border text-xs space-y-1 ${tierInfo.colorClass}`}>
+                          <div className="flex items-center justify-between font-semibold">
+                            <span>{tierInfo.tier}</span>
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-background/50 border border-current/20">
+                              {tierInfo.badge}
+                            </span>
+                          </div>
+                          <p className="text-[11px] opacity-90 leading-relaxed">{tierInfo.desc}</p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <Button
+                    size="sm"
+                    className="w-full text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                    onClick={() => handleApply('local')}
+                  >
+                    Apply Local Model ({localModel})
+                  </Button>
                 </div>
-              </div>
+              ) : (
+                /* INSTRUCTION CARD (MODELS LOCKED UNTIL CONNECTION IS VERIFIED) */
+                <div className="p-3 rounded-lg border border-dashed border-emerald-500/30 bg-emerald-500/5 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    <Laptop className="size-3.5" />
+                    <span>How to enable browser access to your Ollama</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    By default, Ollama blocks requests from web browsers. Run one of the commands below in your terminal before scanning:
+                  </p>
 
-              <Button
-                size="sm"
-                className="w-full text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
-                onClick={() => handleApply('local')}
-              >
-                Apply Local Model ({localModel})
-              </Button>
+                  <div className="space-y-1.5 font-mono text-[10.5px]">
+                    <div className="p-2 rounded bg-background border border-border/70 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-muted-foreground font-sans text-[10px] font-semibold block mb-0.5">Windows (PowerShell):</span>
+                        <code className="text-foreground select-all break-all">$env:OLLAMA_ORIGINS="*" ; ollama serve</code>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText('$env:OLLAMA_ORIGINS="*" ; ollama serve');
+                          onToast('Copied PowerShell command to clipboard!', 'info');
+                        }}
+                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground text-[10px] border rounded flex items-center gap-1"
+                      >
+                        <Copy className="size-3" />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+
+                    <div className="p-2 rounded bg-background border border-border/70 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-muted-foreground font-sans text-[10px] font-semibold block mb-0.5">Windows (Command Prompt):</span>
+                        <code className="text-foreground select-all break-all">set OLLAMA_ORIGINS=* && ollama serve</code>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText('set OLLAMA_ORIGINS=* && ollama serve');
+                          onToast('Copied CMD command to clipboard!', 'info');
+                        }}
+                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground text-[10px] border rounded flex items-center gap-1"
+                      >
+                        <Copy className="size-3" />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+
+                    <div className="p-2 rounded bg-background border border-border/70 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-muted-foreground font-sans text-[10px] font-semibold block mb-0.5">macOS / Linux:</span>
+                        <code className="text-foreground select-all break-all">OLLAMA_ORIGINS="*" ollama serve</code>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText('OLLAMA_ORIGINS="*" ollama serve');
+                          onToast('Copied macOS/Linux command to clipboard!', 'info');
+                        }}
+                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground text-[10px] border rounded flex items-center gap-1"
+                      >
+                        <Copy className="size-3" />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isTestingLocal}
+                    onClick={handleTestLocal}
+                    className="w-full h-8 text-xs font-medium text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/10 gap-1.5"
+                  >
+                    {isTestingLocal ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                    <span>{isTestingLocal ? 'Scanning for local models...' : 'Verify & Scan Local Models'}</span>
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
@@ -576,9 +795,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               <div className="flex items-start gap-2">
                 <Key className="size-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
                 <div className="text-xs space-y-0.5">
-                  <div className="font-semibold text-foreground">Bring Your Own Key (BYOK)</div>
+                  <div className="font-semibold text-foreground">Use Your Own API Key</div>
                   <p className="text-muted-foreground text-[11px]">
-                    Pass your own API key to bypass question quotas. Keys are held in volatile memory only.
+                    Connect your personal API key for unlimited questions. Keys stay in your browser and are never saved on our servers.
                   </p>
                 </div>
               </div>
@@ -592,13 +811,20 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     onClick={() => {
                       setCloudProvider(p);
                       setCloudModel(CLOUD_MODELS[p]?.[0]?.id || '');
+                      setDiscoveredCloudModels([]);
+                      setIsCustomCloudModel(false);
+                      setCustomCloudModelValue('');
                       setCloudStatus(null);
+                      if (config?.provider === p && config?.key) {
+                        setCloudKey(config.key);
+                      } else {
+                        setCloudKey('');
+                      }
                     }}
-                    className={`py-1 rounded border font-medium capitalize text-center transition-colors ${
-                      cloudProvider === p
+                    className={`py-1 rounded border font-medium capitalize text-center transition-colors ${cloudProvider === p
                         ? 'bg-primary text-primary-foreground border-primary font-semibold'
                         : 'bg-background text-muted-foreground border-border hover:bg-muted'
-                    }`}
+                      }`}
                   >
                     {p}
                   </button>
@@ -617,9 +843,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     onChange={(e) => {
                       setCloudKey(e.target.value);
                       setCloudStatus(null);
+                      setDiscoveredCloudModels([]);
                     }}
                     placeholder={`Enter ${cloudProvider.toUpperCase()} API key`}
-                    className="w-full pr-16 pl-2.5 py-1.5 text-xs font-mono rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full pr-20 pl-2.5 py-1.5 text-xs font-mono rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   <div className="absolute right-1 top-1 flex items-center gap-1">
                     <button
@@ -635,30 +862,25 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                       size="sm"
                       disabled={isTestingCloud || !cloudKey.trim()}
                       onClick={handleTestCloud}
-                      className="h-6 px-1.5 text-[10px]"
+                      className={`h-6 px-2 text-[10px] gap-1 transition-colors ${
+                        cloudStatus?.success
+                          ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15'
+                          : ''
+                      }`}
                     >
-                      {isTestingCloud ? <Loader2 className="size-3 animate-spin" /> : 'Verify'}
+                      {isTestingCloud ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : cloudStatus?.success ? (
+                        <>
+                          <Check className="size-3" strokeWidth={2.5} />
+                          <span>Verified</span>
+                        </>
+                      ) : (
+                        'Verify'
+                      )}
                     </Button>
                   </div>
                 </div>
-              </div>
-
-              {/* Model Dropdown */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted-foreground block">
-                  Model
-                </label>
-                <select
-                  value={cloudModel}
-                  onChange={(e) => setCloudModel(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  {(CLOUD_MODELS[cloudProvider] || []).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label} ({m.desc})
-                    </option>
-                  ))}
-                </select>
               </div>
 
               {/* Status Banner */}
@@ -679,13 +901,117 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 </div>
               )}
 
-              <Button
-                size="sm"
-                className="w-full text-xs h-8 bg-purple-600 hover:bg-purple-700 text-white"
-                onClick={() => handleApply('byok')}
-              >
-                Apply BYOK Key
-              </Button>
+              {/* ONLY SHOW MODELS & APPLY AFTER KEY IS VERIFIED */}
+              {isKeyVerified ? (
+                <div className="space-y-3 pt-1 border-t border-purple-500/15">
+                  {/* Model Dropdown */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-muted-foreground block">
+                        Available Models for Verified Key
+                      </label>
+                      {discoveredCloudModels.length > 0 && (
+                        <span className="text-[9.5px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 leading-none">
+                          {discoveredCloudModels.length} Live Models
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      value={isCustomCloudModel ? '__custom__' : cloudModel}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setIsCustomCloudModel(true);
+                        } else {
+                          setIsCustomCloudModel(false);
+                          setCloudModel(e.target.value);
+                        }
+                      }}
+                      className="w-full px-2.5 py-1.5 text-xs rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      {discoveredCloudModels.length > 0 ? (
+                        <optgroup label={`Verified Available on this API Key (${discoveredCloudModels.length})`}>
+                          {discoveredCloudModels.map((m) => {
+                            const known = (CLOUD_MODELS[cloudProvider] || []).find((k) => k.id === m);
+                            return (
+                              <option key={`live-${m}`} value={m}>
+                                {known ? `${known.label} (${m})` : m}
+                              </option>
+                            );
+                          })}
+                        </optgroup>
+                      ) : (
+                        <optgroup label={`Available Models for ${cloudProvider.toUpperCase()}`}>
+                          {(CLOUD_MODELS[cloudProvider] || []).map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.label} ({m.desc})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="Custom Specification">
+                        <option value="__custom__">Custom Model Name...</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  {/* Custom Model Text Input if '__custom__' selected */}
+                  {isCustomCloudModel && (
+                    <div className="space-y-1 p-2 rounded-md bg-muted/40 border border-border">
+                      <label className="text-[11px] font-semibold flex items-center gap-1.5 text-foreground">
+                        <Edit3 className="size-3 text-primary" />
+                        <span>Custom Model Identifier</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customCloudModelValue}
+                        onChange={(e) => setCustomCloudModelValue(e.target.value)}
+                        placeholder="e.g. meta-llama/Llama-3-70b-chat-hf or custom-finetune"
+                        className="w-full px-2.5 py-1.5 text-xs font-mono rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Directly passed to {cloudProvider.toUpperCase()} API endpoint.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Dynamic Model Capability Tier Card */}
+                  {(() => {
+                    const activeModelName = isCustomCloudModel
+                      ? customCloudModelValue || cloudModel
+                      : cloudModel;
+                    const tierInfo = getModelTierInfo(activeModelName);
+                    return (
+                      <div className={`p-2.5 rounded-md border text-xs space-y-1 ${tierInfo.colorClass}`}>
+                        <div className="flex items-center justify-between font-semibold">
+                          <span>{tierInfo.tier}</span>
+                          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-background/50 border border-current/20">
+                            {tierInfo.badge}
+                          </span>
+                        </div>
+                        <p className="text-[11px] opacity-90 leading-relaxed">{tierInfo.desc}</p>
+                      </div>
+                    );
+                  })()}
+
+                  <Button
+                    size="sm"
+                    className="w-full text-xs h-8 bg-purple-600 hover:bg-purple-700 text-white font-medium"
+                    onClick={() => handleApply('byok')}
+                  >
+                    Apply Model ({isCustomCloudModel ? customCloudModelValue || cloudModel : cloudModel})
+                  </Button>
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg border border-dashed border-purple-500/30 bg-purple-500/5 text-center space-y-1.5">
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-medium text-purple-700 dark:text-purple-300">
+                    <Key className="size-3.5 text-purple-600 dark:text-purple-400" />
+                    <span>Verify your key to show available models</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-normal max-w-xs mx-auto">
+                    Enter your {cloudProvider.toUpperCase()} API key above and click <strong>Verify</strong> to show the models available for this key.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,5 +1,12 @@
 import { AccessTier, UsageInfo, ExampleQuestion, UploadedDoc, CostEstimate, LLMConfig } from '../types';
 
+export interface ServerConfig {
+  default_llm_provider: string;
+  default_llm_model: string;
+  demo_parser?: string;
+  session_ttl_hours?: number;
+}
+
 const SESSION_STORAGE_KEY = 'provenance_active_session';
 
 function readStoredToken(): string | null {
@@ -33,7 +40,7 @@ export class ApiClient {
   private tier: AccessTier = 'tier_a';
   private visitorKeys: LLMConfig = {
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     key: '',
   };
 
@@ -48,7 +55,7 @@ export class ApiClient {
   setVisitorKeys(keys: LLMConfig | null) {
     this.visitorKeys = keys ?? {
       provider: 'groq',
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       key: '',
     };
   }
@@ -134,6 +141,21 @@ export class ApiClient {
     const data = await res.json();
     this.rememberToken(data.session_id || data.session_token);
     return data;
+  }
+
+  async getConfig(): Promise<ServerConfig> {
+    try {
+      const res = await this.apiFetch('/config');
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback if network or pre-session
+    }
+    return {
+      default_llm_provider: 'groq',
+      default_llm_model: 'openai/gpt-oss-120b',
+    };
   }
 
   async getUsage(): Promise<UsageInfo> {

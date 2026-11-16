@@ -73,6 +73,13 @@ export function App() {
   const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
   const [queuedNonce, setQueuedNonce] = useState(0);
   const [visitorLlm, setVisitorLlm] = useState<LLMConfig | null>(null);
+  const [serverConfig, setServerConfig] = useState<{
+    default_llm_provider: string;
+    default_llm_model: string;
+  }>({
+    default_llm_provider: 'groq',
+    default_llm_model: 'openai/gpt-oss-120b',
+  });
 
   // Nav sidebar collapse state
   const [isNavCollapsed, setIsNavCollapsed] = useState<boolean>(false);
@@ -162,10 +169,28 @@ export function App() {
     try {
       const u = await api.getUsage();
       setUsage(u);
+      if (u.owner_llm_model) {
+        setServerConfig((prev) => ({
+          default_llm_provider: u.owner_llm_provider || prev.default_llm_provider,
+          default_llm_model: u.owner_llm_model || prev.default_llm_model,
+        }));
+      }
     } catch {
       // Ignored
     }
   };
+
+  // Eagerly fetch server default LLM configuration loaded from environment variables
+  useEffect(() => {
+    api.getConfig().then((cfg) => {
+      if (cfg?.default_llm_model) {
+        setServerConfig({
+          default_llm_provider: cfg.default_llm_provider || 'groq',
+          default_llm_model: cfg.default_llm_model,
+        });
+      }
+    }).catch(() => {});
+  }, []);
 
   const refreshDocuments = async () => {
     try {
@@ -545,6 +570,8 @@ export function App() {
         <SectionDetails
           activeNav={activeNav}
           usage={usage}
+          defaultModel={usage?.owner_llm_model || serverConfig.default_llm_model}
+          defaultProvider={usage?.owner_llm_provider || serverConfig.default_llm_provider}
           scope={scope}
           documents={documents}
           onRequestDelete={() => setShowDeleteModal(true)}
@@ -564,6 +591,7 @@ export function App() {
           ingest={ingest}
           suggestedQuestions={suggestedQuestions}
           onGoToUpload={() => handleSelectNav('tier_b')}
+          onGoToModels={() => handleSelectNav('models')}
           hasVisitorKey={Boolean(visitorLlm)}
           fillWidth={compact}
           hideHeader={compact}
@@ -607,13 +635,14 @@ export function App() {
             ingestPct={ingest?.pct}
             documentCount={documents.length}
             activeDocName={activeDocName}
-            llmProvider={visitorLlm ? visitorLlm.provider : usage?.owner_llm_provider}
-            llmModel={visitorLlm ? visitorLlm.model : usage?.owner_llm_model}
+            llmProvider={visitorLlm ? visitorLlm.provider : (usage?.owner_llm_provider || serverConfig.default_llm_provider)}
+            llmModel={visitorLlm ? visitorLlm.model : (usage?.owner_llm_model || serverConfig.default_llm_model)}
             activeNav={activeNav}
             onGoToUpload={() => handleSelectNav('tier_b')}
             usage={usage}
             hasVisitorKey={Boolean(visitorLlm)}
             onOpenLimits={() => handleSelectNav('limits')}
+            onOpenModels={() => handleSelectNav('models')}
             compact={compact}
             onShowContext={() => setMobilePane('context')}
           />

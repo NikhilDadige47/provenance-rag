@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { FileText, ShieldCheck, ArrowRight, HelpCircle } from 'lucide-react';
+import { FileText, ShieldCheck, ArrowRight, HelpCircle, Cpu } from 'lucide-react';
 import { DocViewerModal, DemoDocData } from './DocViewerModal';
 import { ExampleQuestion, LLMConfig } from '../types';
-import { ModelSelector } from './ModelSelector';
+import { formatDefaultModelLabel } from '../lib/modelUtils';
 
 interface TierADemoProps {
   onAskExample: (question: string) => void;
   exampleChips?: ExampleQuestion[];
   llmConfig?: LLMConfig | null;
+  defaultModel?: string;
+  defaultProvider?: string;
   onKeyConfigChange?: (config: LLMConfig | null) => void;
   onToast?: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
+  onGoToModels?: () => void;
 }
 
 const DEMO_DOCS: DemoDocData[] = [
@@ -59,8 +62,10 @@ export const TierADemo: React.FC<TierADemoProps> = ({
   onAskExample,
   exampleChips = [],
   llmConfig = null,
-  onKeyConfigChange = () => {},
+  defaultModel,
+  defaultProvider,
   onToast = () => {},
+  onGoToModels,
 }) => {
   const [selectedDoc, setSelectedDoc] = useState<DemoDocData | null>(null);
 
@@ -71,27 +76,43 @@ export const TierADemo: React.FC<TierADemoProps> = ({
 
   return (
     <div className="space-y-2 sm:space-y-3">
-      {/* Universal Model Selector */}
-      <ModelSelector
-        config={llmConfig}
-        onChange={onKeyConfigChange}
-        onToast={onToast}
-        sectionContext="demo"
-      />
+      {/* Active Model Indicator with 1-click link to AI Models tab */}
+      <div className="flex items-center justify-between p-2.5 rounded-lg border border-border/70 bg-card text-xs shadow-2xs">
+        <div className="flex items-center gap-2 min-w-0">
+          <Cpu className="size-3.5 text-primary shrink-0" />
+          <span className="text-muted-foreground truncate">Active AI:</span>
+          <span className="font-semibold text-foreground truncate">
+            {llmConfig?.isLocal
+              ? `Local (${llmConfig.model})`
+              : llmConfig?.key
+                ? `Custom (${llmConfig.provider.toUpperCase()}: ${llmConfig.model})`
+                : formatDefaultModelLabel(defaultProvider, defaultModel)}
+          </span>
+        </div>
+        {onGoToModels && (
+          <button
+            type="button"
+            onClick={onGoToModels}
+            className="text-primary hover:underline text-[11px] font-medium shrink-0 ml-2"
+          >
+            Change AI →
+          </button>
+        )}
+      </div>
 
       <div className="border border-border rounded-lg p-2.5 sm:p-3 surface-inset shadow-xs space-y-2 sm:space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-3.5 text-emerald-600 shrink-0" />
-            <h3 className="font-semibold text-xs sm:text-sm">Pre-Indexed Demo Corpus</h3>
+            <h3 className="font-semibold text-xs sm:text-sm">Sample Apple Annual Reports</h3>
           </div>
           <span className="text-[10px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-1.5 py-px rounded-full whitespace-nowrap shrink-0 font-medium">
-            Ready
+            Ready to Ask
           </span>
         </div>
 
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Apple financial reports (Form 10-K, FY2023–FY2025). Click a filing to preview, or a question to query.
+          Official Apple financial reports (Form 10-K). Click any report to inspect pages, or click a question below to test.
         </p>
 
         <div className="grid grid-cols-3 gap-1.5">

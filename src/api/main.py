@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.api.chat import router as chat_router
-from src.api.connections import ConnectionTestRequest, verify_provider_connection
+from src.api.connections import verify_provider_connection
 from src.api.jobs import JobRunner
 from src.api.lifecycle import run_ttl_cleanup_loop
 from src.api.observability import record_request
@@ -185,6 +185,7 @@ app.add_middleware(
         "X-LLM-Key",
         "X-LLM-Provider",
         "X-LLM-Model",
+        "X-LLM-Base-Url",
         "X-Parser-Key",
     ],
     expose_headers=["X-Request-ID"],
@@ -437,6 +438,25 @@ async def terms_text() -> FileResponse:
     if not _TERMS_PATH.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Terms not found")
     return FileResponse(path=_TERMS_PATH, media_type="text/markdown", filename="TERMS.md")
+
+
+class PublicConfigResponse(BaseModel):
+    default_llm_provider: str = Field(default="groq", description="Owner-configured default LLM provider")
+    default_llm_model: str = Field(default="openai/gpt-oss-120b", description="Owner-configured default LLM model")
+    demo_parser: str = Field(default="llamaparse", description="Demo corpus parser")
+    session_ttl_hours: float = Field(default=2.0, description="Session TTL hours")
+
+
+@app.get("/config", response_model=PublicConfigResponse, tags=["system"])
+async def public_config(request: Request) -> PublicConfigResponse:
+    """Return public system configuration loaded from environment variables."""
+    cfg: OwnerConfig = getattr(request.app.state, "cfg", None) or OwnerConfig.from_env()
+    return PublicConfigResponse(
+        default_llm_provider=cfg.default_llm_provider,
+        default_llm_model=cfg.default_llm_model,
+        demo_parser=cfg.demo_parser,
+        session_ttl_hours=float(cfg.session_ttl_hours),
+    )
 
 
 # ---------------------------------------------------------------------------

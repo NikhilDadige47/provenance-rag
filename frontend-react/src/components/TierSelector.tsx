@@ -11,14 +11,14 @@ export const TierSelector: React.FC<TierSelectorProps> = ({ currentTier, onSelec
   const tabs = [
     {
       id: 'tier_a' as AccessTier,
-      title: 'Demo Corpus',
-      desc: 'Free queries over pre-indexed corpus',
+      title: 'Sample Reports',
+      desc: 'Free questions over Apple annual filings',
       icon: Eye,
     },
     {
       id: 'tier_b' as AccessTier,
-      title: 'Upload Documents',
-      desc: 'Direct PDF upload with isolated session scope & optional BYOK',
+      title: 'Your Documents',
+      desc: 'Upload custom PDFs & ask questions with source citations',
       icon: UploadCloud,
     },
   ];

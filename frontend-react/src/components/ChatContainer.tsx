@@ -7,19 +7,21 @@ import {
   Lock,
   Loader2,
   UploadCloud,
+  Cpu,
+  Gauge,
 } from 'lucide-react';
 import { Button } from './ui/button';
 
 import { ChatMessage, ExampleQuestion, SourceCard, UsageInfo } from '../types';
 import { api } from '../lib/api';
 import { formatTtl, readUsage, useLiveTtl } from '../lib/quota';
-import { AllowanceMeter } from './AllowanceMeter';
 import { MarkdownMessage } from './MarkdownMessage';
 import { AIReasoningTrace } from './AIReasoningTrace';
 import { SourcesDropdown } from './SourcesDropdown';
 import { SourceInspectorPanel } from './SourceInspectorPanel';
 import queryHistoryIcon from '../assets/query-history.png';
 import { NavItem } from './NavSidebar';
+import { formatModelDisplayName } from '../lib/modelUtils';
 
 interface ChatContainerProps {
   scope: string;
@@ -40,6 +42,7 @@ interface ChatContainerProps {
   usage?: UsageInfo | null;
   hasVisitorKey?: boolean;
   onOpenLimits?: () => void;
+  onOpenModels?: () => void;
   compact?: boolean;
   onShowContext?: () => void;
 }
@@ -63,7 +66,7 @@ function formatLlmLabel(provider?: string, model?: string): string {
     PROVIDER_LABELS[rawProvider.toLowerCase()] ||
     (rawProvider ? rawProvider.charAt(0).toUpperCase() + rawProvider.slice(1) : 'LLM');
   if (!rawModel) return name;
-  return `${name} (${rawModel})`;
+  return `${name} (${formatModelDisplayName(rawModel)})`;
 }
 
 export const ChatContainer: React.FC<ChatContainerProps> = ({
@@ -85,6 +88,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   usage = null,
   hasVisitorKey = false,
   onOpenLimits,
+  onOpenModels,
   compact = false,
   onShowContext,
 }) => {
@@ -130,15 +134,15 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   const getPlaceholder = () => {
     if (isProcessing) {
-      return 'Ingesting document...';
+      return 'Reading document...';
     }
     if (isLocked) {
-      return 'Upload a document to chat';
+      return 'Upload a PDF or choose a sample report to chat';
     }
     if (isQuotaLocked) {
-      return 'Add your LLM key to keep chatting';
+      return 'Connect your own API key to keep chatting';
     }
-    return 'Type your query...';
+    return 'Ask a question about your documents...';
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -166,8 +170,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     if (isQuotaLocked) {
       onToast(
         hasVisitorKey
-          ? 'Your-key question cap for this session is used up.'
-          : 'Owner-funded questions are used up. Add your own LLM key to keep chatting.',
+          ? 'Your API key question allowance for this session is reached.'
+          : 'Daily free question limit reached. Connect your own API key in AI Models to continue.',
         'warning'
       );
       return;
@@ -299,40 +303,63 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
   return (
     <div className="relative flex flex-col h-full flex-1 surface-panel overflow-hidden">
-      {/* Chat Header stays clickable so remaining quota / TTL is always reachable */}
-      <div className={compact ? 'hidden' : 'h-16 px-4 border-b border-border surface-header flex items-center justify-between gap-3 text-xs shrink-0 z-10'}>
-        <div className="flex items-center gap-2.5 min-w-0">
+      {/* Chat Header: Brand Title and Questions Left on the left (never disappear), Model on the right */}
+      <div className={compact ? 'hidden' : 'h-16 px-4 border-b border-border surface-header flex items-center justify-between gap-2.5 text-xs shrink-0 z-10'}>
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink-0">
           {onOpenMobileMenu && (
             <Button
               variant="outline"
               size="icon"
               onClick={onOpenMobileMenu}
-              className="size-7 lg:hidden mr-1"
+              className="size-7 lg:hidden mr-1 shrink-0"
               aria-label="Open sidebar"
             >
               <Menu className="size-4" />
             </Button>
           )}
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-bold text-sm sm:text-base text-foreground tracking-tight truncate">Provenance Copilot</span>
+
+          {/* Title stays anchored with shrink-0 so it never truncates or disappears on divider drag */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="font-bold text-sm sm:text-base text-foreground tracking-tight whitespace-nowrap">
+              Provenance Copilot
+            </span>
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           </div>
-        </div>
-        <div className="flex items-center gap-2 min-w-0 shrink-0">
-          {llmLabel && (
-            <span
-              className="text-[11px] font-mono text-muted-foreground hidden xl:inline-block truncate max-w-[180px]"
-              title={llmLabel}
+
+          {/* Questions Left badge positioned neatly to the left next to the title, showing ONLY questions left */}
+          {usage && (
+            <button
+              type="button"
+              onClick={onOpenLimits}
+              aria-label={`${remainingQuestions} questions remaining`}
+              title={`${remainingQuestions} questions left · Click to view limits`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium border transition-colors shrink-0 cursor-pointer ${
+                remainingQuestions === 0
+                  ? 'border-amber-500/35 bg-amber-500/10 text-amber-600 hover:bg-amber-500/15'
+                  : 'border-border bg-card/80 hover:border-primary/40 hover:bg-muted/40 text-foreground shadow-2xs'
+              }`}
             >
-              {llmLabel}
-            </span>
+              <Gauge className={`size-3.5 shrink-0 ${remainingQuestions === 0 ? 'text-amber-600' : 'text-primary'}`} />
+              <span className="whitespace-nowrap font-semibold">
+                {remainingQuestions} left
+              </span>
+            </button>
           )}
-          <AllowanceMeter
-            usage={usage}
-            hasVisitorKey={hasVisitorKey}
-            onAddKey={onGoToUpload}
-            onOpenLimits={onOpenLimits}
-          />
+        </div>
+
+        {/* Right side: Active model pill (gracefully truncates if panel width is tight) */}
+        <div className="flex items-center gap-2 min-w-0">
+          {llmLabel && (
+            <button
+              type="button"
+              onClick={onOpenModels}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-muted/60 hover:bg-muted text-foreground border border-border/80 transition-colors cursor-pointer min-w-0 max-w-[140px] sm:max-w-[220px]"
+              title="Click to configure AI inference model"
+            >
+              <Cpu className="size-3 text-primary shrink-0" />
+              <span className="truncate">{llmLabel}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -428,12 +455,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               >
                 {activeNav === 'tier_b' ? 'Back to your document' : 'Browse sample questions'}
               </Button>
-            )}
-            {usage && (
-              <p className="text-[11px] text-muted-foreground/80 font-mono">
-                {remainingQuestions} of {hasVisitorKey ? quota.ownMax : quota.ownerMax} questions
-                {hasVisitorKey ? ' on your key' : ''} · {formatTtl(ttl)}
-              </p>
             )}
           </div>
         ) : (
@@ -564,7 +585,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/60 border border-border text-xs text-muted-foreground mb-2.5">
             <Lock className="size-3.5 text-muted-foreground/70 shrink-0" />
             <span>
-              Workspace is empty. Upload a PDF in <strong>Upload Documents</strong> or select <strong>Demo Corpus</strong> to enable chat.
+              No document loaded. Upload a PDF in <strong>Your Documents</strong> or select <strong>Sample Reports</strong> to start chatting.
             </span>
           </div>
         )}
@@ -575,17 +596,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               <AlertTriangle className="size-3.5 shrink-0" />
               <span className="truncate">
                 {hasVisitorKey
-                  ? 'Your-key question cap for this session is used up.'
-                  : 'Owner-funded questions are used up. Paste your own LLM key to keep chatting.'}
+                  ? 'Your API key question allowance for this session is reached.'
+                  : 'Daily free question limit reached. Connect your own API key in AI Models to keep chatting.'}
               </span>
             </span>
-            {!hasVisitorKey && onGoToUpload && (
+            {!hasVisitorKey && onOpenModels && (
               <button
                 type="button"
-                onClick={onGoToUpload}
+                onClick={onOpenModels}
                 className="shrink-0 font-semibold hover:underline"
               >
-                Add key
+                Add Key
               </button>
             )}
           </div>

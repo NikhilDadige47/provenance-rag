@@ -7,6 +7,7 @@ import {
   Loader2,
   Sparkles,
   ArrowRight,
+  Cpu,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { UploadedDoc, LLMConfig, UsageInfo } from '../types';
@@ -16,7 +17,7 @@ import { parserDisplay, readUsage } from '../lib/quota';
 import { previewUrlForDoc } from '../lib/uploadedFiles';
 import { DocViewerModal, DemoDocData } from './DocViewerModal';
 import { persistTermsAccepted, readTermsAccepted, TermsModal } from './TermsModal';
-import { ModelSelector } from './ModelSelector';
+import { formatDefaultModelLabel } from '../lib/modelUtils';
 
 function ParserBadge({ parser, degraded }: { parser: string; degraded?: boolean }) {
   const info = parserDisplay(parser);
@@ -45,6 +46,9 @@ interface TierBUploadProps {
   ingest: IngestProgress | null;
   suggestedQuestions?: string[];
   usage?: UsageInfo | null;
+  defaultModel?: string;
+  defaultProvider?: string;
+  onGoToModels?: () => void;
 }
 
 export const TierBUpload: React.FC<TierBUploadProps> = ({
@@ -52,12 +56,15 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
   onRequestDelete,
   onToast,
   llmConfig = null,
+  defaultModel,
+  defaultProvider,
   onKeyConfigChange,
   onAskExample,
   onStartIngest,
   ingest,
   suggestedQuestions = [],
   usage = null,
+  onGoToModels,
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -143,14 +150,14 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
       <div className="border border-border/80 rounded-lg p-4 sm:p-5 surface-inset shadow-sm space-y-4">
         <div className="space-y-2">
           <div className="space-y-0.5">
-            <h3 className="font-semibold text-base text-foreground">Document Ingestion</h3>
+            <h3 className="font-semibold text-base text-foreground">Upload Custom PDF</h3>
             <p className="text-xs text-muted-foreground">
-              Isolated session · Max 10MB · Owner-paid parse · TTL shred
+              Private session · Max 10MB · Automatically cleared on session expiry
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5">
             <span className="text-[11px] font-mono px-2 py-0.5 rounded-full border border-border bg-muted/40">
-              {docsRemaining} of {quota.docsMax} docs left
+              {docsRemaining} of {quota.docsMax} documents left
             </span>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded-full border border-border bg-muted/40">
               {pagesRemaining} of {quota.pagesMax} pages left
@@ -225,9 +232,7 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
             className="size-4 mt-0.5 shrink-0 rounded border-border text-primary accent-primary cursor-pointer"
           />
           <span>
-            I have the right to upload this file. Text may be sent to the selected parser, Cohere,
-            and the active LLM. The session is wiped on TTL or delete. Visitor keys transit the
-            server in memory only.{' '}
+            I have the right to upload this file. Documents are processed privately and automatically cleared when your session expires.{' '}
             <button
               type="button"
               onClick={() => setTermsOpen(true)}
@@ -260,14 +265,28 @@ export const TierBUpload: React.FC<TierBUploadProps> = ({
           </div>
         )}
 
-        {/* Universal Model Selector (Cloud Default, Local Ollama, or Cloud BYOK) */}
-        <div className="pt-2 border-t border-border/60">
-          <ModelSelector
-            config={llmConfig}
-            onChange={(cfg) => onKeyConfigChange?.(cfg)}
-            onToast={onToast}
-            sectionContext="upload"
-          />
+        {/* Active Model Indicator with 1-click link to AI Models tab */}
+        <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+            <Cpu className="size-3.5 text-primary shrink-0" />
+            <span className="truncate">Active AI:</span>
+            <span className="font-semibold text-foreground truncate">
+              {llmConfig?.isLocal
+                ? `Local (${llmConfig.model})`
+                : llmConfig?.key
+                  ? `Custom (${llmConfig.provider.toUpperCase()}: ${llmConfig.model})`
+                  : formatDefaultModelLabel(defaultProvider, defaultModel)}
+            </span>
+          </div>
+          {onGoToModels && (
+            <button
+              type="button"
+              onClick={onGoToModels}
+              className="text-primary hover:underline text-[11px] font-medium shrink-0 ml-2"
+            >
+              Change AI →
+            </button>
+          )}
         </div>
       </div>
 

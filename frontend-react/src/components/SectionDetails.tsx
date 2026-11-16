@@ -1,16 +1,20 @@
 import React from 'react';
-import { Moon, Sun, Loader2, ArrowRight } from 'lucide-react';
+import { Moon, Sun, Loader2, ArrowRight, Cpu } from 'lucide-react';
 import { Button } from './ui/button';
 import { NavItem } from './NavSidebar';
 import { TierADemo } from './TierADemo';
 import { TierBUpload } from './TierBUpload';
 import { LimitsPanel } from './LimitsPanel';
+import { ModelSelector } from './ModelSelector';
 import { UsageInfo, UploadedDoc, LLMConfig, ExampleQuestion } from '../types';
 import { IngestProgress } from '../lib/ingestProgress';
+import { formatDefaultModelLabel } from '../lib/modelUtils';
 
 interface SectionDetailsProps {
   activeNav: NavItem;
   usage: UsageInfo | null;
+  defaultModel?: string;
+  defaultProvider?: string;
   scope: string;
   documents: UploadedDoc[];
   onRequestDelete: () => void;
@@ -27,6 +31,7 @@ interface SectionDetailsProps {
   ingest: IngestProgress | null;
   suggestedQuestions?: string[];
   onGoToUpload?: () => void;
+  onGoToModels?: () => void;
   hasVisitorKey?: boolean;
   fillWidth?: boolean;
   hideHeader?: boolean;
@@ -36,6 +41,8 @@ interface SectionDetailsProps {
 export const SectionDetails: React.FC<SectionDetailsProps> = ({
   activeNav,
   usage,
+  defaultModel,
+  defaultProvider,
   scope,
   documents,
   onRequestDelete,
@@ -52,6 +59,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
   ingest,
   suggestedQuestions = [],
   onGoToUpload,
+  onGoToModels,
   hasVisitorKey = false,
   fillWidth = false,
   hideHeader = false,
@@ -59,16 +67,20 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
 }) => {
   const sectionHeaders: Record<NavItem, { title: string; subtitle: string }> = {
     tier_a: {
-      title: 'Pre-Indexed Demo Corpus',
-      subtitle: 'Instant queries over Apple Form 10-K filings (FY2023–FY2025)',
+      title: 'Sample Financial Reports',
+      subtitle: 'Instant answers across Apple annual reports (10-K) with source citations',
     },
     tier_b: {
-      title: 'Custom Document Ingestion & BYOK',
-      subtitle: 'Upload custom PDFs & optionally connect personal LLM API keys',
+      title: 'Analyze Your Own Documents',
+      subtitle: 'Upload any PDF to search, summarize, and ask questions with verified proof',
+    },
+    models: {
+      title: 'AI Model & Intelligence',
+      subtitle: 'Choose which AI answers your questions — works across all your documents',
     },
     limits: {
-      title: 'Session Limits',
-      subtitle: 'Live remaining questions, documents, pages, and session TTL',
+      title: 'Session Usage & Limits',
+      subtitle: 'Track your remaining questions, document page allowance, and active session timer',
     },
   };
 
@@ -156,8 +168,11 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
             onAskExample={onAskExample}
             exampleChips={exampleChips}
             llmConfig={llmConfig}
+            defaultModel={defaultModel}
+            defaultProvider={defaultProvider}
             onKeyConfigChange={onKeyConfigChange}
             onToast={onToast}
+            onGoToModels={onGoToModels}
           />
         )}
 
@@ -167,13 +182,50 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
             onRequestDelete={onRequestDelete}
             onToast={onToast}
             llmConfig={llmConfig}
+            defaultModel={defaultModel}
+            defaultProvider={defaultProvider}
             onKeyConfigChange={onKeyConfigChange}
             onAskExample={onAskExample}
             onStartIngest={onStartIngest}
             ingest={ingest}
             suggestedQuestions={suggestedQuestions}
             usage={usage}
+            onGoToModels={onGoToModels}
           />
+        )}
+
+        {activeNav === 'models' && (
+          <div className="p-3.5 sm:p-5 space-y-4 overflow-y-auto">
+            <div className="rounded-lg border border-border/80 bg-card/60 p-3 sm:p-4 space-y-1.5 shadow-2xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Cpu className="size-3.5 text-primary" />
+                  <span>Active AI Engine</span>
+                </span>
+                {llmConfig ? (
+                  <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 whitespace-nowrap">
+                    {llmConfig.isLocal ? `Local (${llmConfig.model})` : `Custom (${llmConfig.provider.toUpperCase()}: ${llmConfig.model})`}
+                  </span>
+                ) : (
+                  <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
+                    {formatDefaultModelLabel(defaultProvider, defaultModel)}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Your selected AI answers questions across <strong>both sample reports and your uploaded documents</strong> with exact citations.
+              </p>
+            </div>
+
+            <ModelSelector
+              config={llmConfig}
+              onChange={onKeyConfigChange}
+              onToast={onToast}
+              sectionContext="standalone"
+              defaultModel={defaultModel}
+              defaultProvider={defaultProvider}
+            />
+          </div>
         )}
 
         {activeNav === 'limits' && (
@@ -182,6 +234,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
             scope={scope}
             hasVisitorKey={hasVisitorKey}
             onAddKey={onGoToUpload}
+            defaultModel={defaultModel}
           />
         )}
       </div>

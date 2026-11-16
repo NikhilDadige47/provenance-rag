@@ -11,7 +11,6 @@ from src.security.egress import create_secure_client
 from src.security.errors import (
     EgressBlockedError,
     InvalidKeyError,
-    ProviderTimeoutError,
     QuotaExhaustedError,
     RateLimitedError,
 )
@@ -90,7 +89,7 @@ async def verify_provider_connection(
                 error=f"Local endpoint returned status {response.status_code}.",
                 hint="Verify that Ollama or LM Studio is serving on the specified URL.",
             )
-        except Exception as exc:
+        except Exception:
             return ConnectionTestResponse(
                 ok=False,
                 provider=provider_clean,
@@ -108,15 +107,25 @@ async def verify_provider_connection(
             hint="Supported providers: " + ", ".join(PROVIDER_PROBE_URLS.keys()),
         )
 
+    # Cloud providers require an API key
+    if not key or not key.reveal() or not key.reveal().strip():
+        return ConnectionTestResponse(
+            ok=False,
+            provider=provider_clean,
+            error="No API key provided.",
+            hint=f"Please enter a valid {provider_clean.upper()} API key.",
+        )
+
+    clean_key = key.reveal().strip()
     probe_url = PROVIDER_PROBE_URLS[provider_clean]
     headers: dict[str, str] = {}
 
     if provider_clean == "gemini":
-        probe_url = f"{probe_url}?key={key.reveal()}"
+        probe_url = f"{probe_url}?key={clean_key}"
     elif provider_clean in {"cohere", "openai", "groq", "mistral", "llamaparse", "landingai", "unstructured"}:
-        headers["Authorization"] = f"Bearer {key.reveal()}"
+        headers["Authorization"] = f"Bearer {clean_key}"
     elif provider_clean == "anthropic":
-        headers["x-api-key"] = key.reveal()
+        headers["x-api-key"] = clean_key
         headers["anthropic-version"] = "2023-06-01"
 
     close_client = False
@@ -125,7 +134,7 @@ async def verify_provider_connection(
         close_client = True
 
     try:
-        response = await client.get(probe_url, headers=headers)
+        response = await client.get(probe_url, headers=headers, timeout=10.0)
 
         if response.status_code in {200, 201}:
             models: list[str] | None = None
@@ -151,8 +160,19 @@ async def verify_provider_connection(
         if response.status_code in {401, 403}:
             raise InvalidKeyError(provider=provider_clean, is_visitor_key=True)
 
+        # Gemini returns 400 for invalid API keys (not 401/403)
+        if provider_clean == "gemini" and response.status_code == 400:
+            raise InvalidKeyError(provider=provider_clean, is_visitor_key=True)
+
         if response.status_code == 429:
             raise RateLimitedError(provider=provider_clean, is_visitor_key=True)
+
+        # Anthropic may return 404 if the models endpoint is not available for the
+        # API version used — treat any non-auth-failure as "key accepted" for providers
+        # whose auth check occurs before routing and would have returned 401/403 if the
+        # key were bad.
+        if provider_clean == "anthropic" and response.status_code in {404, 405}:
+            return ConnectionTestResponse(ok=True, provider=provider_clean)
 
         return ConnectionTestResponse(
             ok=False,
@@ -176,7 +196,12 @@ async def verify_provider_connection(
             hint="Account rate limit or credit quota was exceeded.",
         )
     except httpx.TimeoutException:
-        raise ProviderTimeoutError(provider=provider_clean) from None
+        return ConnectionTestResponse(
+            ok=False,
+            provider=provider_clean,
+            error=f"Request to {provider_clean} timed out.",
+            hint="The provider service did not respond in time or may be experiencing degradation.",
+        )
     except EgressBlockedError as e:
         return ConnectionTestResponse(
             ok=False,

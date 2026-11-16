@@ -28,6 +28,7 @@ interface ModelItem {
 
 const SUITABLE_MODELS: Record<string, ModelItem[]> = {
   groq: [
+    { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B', desc: '120B parameter reasoning model on Groq' },
     { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile', desc: 'Recommended: 128k context, top reasoning' },
     { id: 'llama-3.1-70b-versatile', label: 'Llama 3.1 70B Versatile', desc: '128k context, high quality' },
     { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant', desc: 'Ultra-low latency, 128k context' },
@@ -80,8 +81,9 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
   const suitableList = SUITABLE_MODELS[provider] || [];
 
   useEffect(() => {
-    onKeyConfigChange({ provider, model, key });
-    // Push the currently selected provider/model into the chat header on mount.
+    if (key.trim() && testResult?.success) {
+      onKeyConfigChange({ provider, model, key: key.trim() });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -93,31 +95,37 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
     const defaultM = SUITABLE_MODELS[p]?.[0]?.id || 'llama-3.3-70b-versatile';
     setModel(defaultM);
     setTestResult(null);
-    onKeyConfigChange({ provider: p, model: defaultM, key });
+    setKey('');
   };
 
   const handleModelSelect = (selectedVal: string) => {
     if (selectedVal === '__custom__') {
       setIsCustomModel(true);
       const val = customModelValue || model;
-      onKeyConfigChange({ provider, model: val, key });
+      if (testResult?.success) {
+        onKeyConfigChange({ provider, model: val, key: key.trim() });
+      }
     } else {
       setIsCustomModel(false);
       setModel(selectedVal);
-      onKeyConfigChange({ provider, model: selectedVal, key });
+      if (testResult?.success) {
+        onKeyConfigChange({ provider, model: selectedVal, key: key.trim() });
+      }
     }
   };
 
   const handleCustomModelChange = (val: string) => {
     setCustomModelValue(val);
     setModel(val);
-    onKeyConfigChange({ provider, model: val, key });
+    if (testResult?.success) {
+      onKeyConfigChange({ provider, model: val, key: key.trim() });
+    }
   };
 
   const handleKeyChange = (val: string) => {
     setKey(val);
     setTestResult(null);
-    onKeyConfigChange({ provider, model, key: val });
+    setLiveModels([]);
   };
 
   const handleTestKey = async () => {
@@ -133,22 +141,33 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
       const res = await api.testConnection(provider, key.trim());
       if (res.success) {
         let count = 0;
+        let selectedModel = model;
         if (res.models && res.models.length > 0) {
           // Filter suitable models (exclude whisper, guard, audio models for Groq / OpenAI)
           const filtered = res.models.filter((m) => {
             const lower = m.toLowerCase();
-            return !lower.includes('whisper') && !lower.includes('guard') && !lower.includes('tts') && !lower.includes('dall-e');
+            return (
+              !lower.includes('whisper') &&
+              !lower.includes('guard') &&
+              !lower.includes('tts') &&
+              !lower.includes('dall-e') &&
+              !lower.includes('embed') &&
+              !lower.includes('imagen') &&
+              !lower.includes('aqa') &&
+              !lower.includes('moderation')
+            );
           });
           setLiveModels(filtered);
           count = filtered.length;
 
           // If current model is not in the live models, pick a recommended one
           if (!filtered.includes(model) && filtered.length > 0) {
-            const preferred = filtered.find((m) => m.includes('llama-3.3') || m.includes('gpt-4o')) || filtered[0];
-            setModel(preferred);
-            onKeyConfigChange({ provider, model: preferred, key: key.trim() });
+            selectedModel = filtered.find((m) => m.includes('llama-3.3') || m.includes('gpt-4o')) || filtered[0];
+            setModel(selectedModel);
           }
         }
+
+        onKeyConfigChange({ provider, model: selectedModel, key: key.trim() });
 
         setTestResult({
           success: true,
@@ -183,95 +202,25 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
           Your key stays in this tab only — never stored. Owner-funded questions are skipped while it is active.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-          {/* Provider Selection */}
-          <div className="space-y-1.5 flex-1">
-            <div className="h-5 flex items-center">
-              <label className="text-xs font-semibold text-foreground">LLM Provider</label>
-            </div>
-            <select
-              value={provider}
-              onChange={(e) => handleProviderChange(e.target.value)}
-              className="w-full h-9 text-xs px-2.5 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="groq">Groq</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Claude</option>
-              <option value="gemini">Gemini</option>
-              <option value="mistral">Mistral</option>
-            </select>
-          </div>
-
-          {/* Model Identifier Dropdown */}
-          <div className="space-y-1.5 flex-1">
-            <div className="h-5 flex items-center justify-between">
-              <label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
-                <Cpu className="size-3.5 text-primary" />
-                <span>Model Identifier</span>
-              </label>
-              {liveModels.length > 0 && (
-                <span className="text-[10px] font-mono text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 leading-none">
-                  {liveModels.length} Live Models
-                </span>
-              )}
-            </div>
-
-            <select
-              value={isCustomModel ? '__custom__' : model}
-              onChange={(e) => handleModelSelect(e.target.value)}
-              className="w-full h-9 text-xs px-2.5 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              {/* If verified live models were discovered */}
-              {liveModels.length > 0 && (
-                <optgroup label={`Verified Live on ${provider.toUpperCase()}`}>
-                  {liveModels.map((m) => (
-                    <option key={`live-${m}`} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-
-              {/* Pre-configured suitable models */}
-              <optgroup label={`Suitable Models for ${provider.toUpperCase()}`}>
-                {suitableList.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </optgroup>
-
-              {/* Custom Model Option */}
-              <optgroup label="Custom Specification">
-                <option value="__custom__">Custom</option>
-              </optgroup>
-            </select>
-          </div>
+        {/* Provider Selection */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-foreground">LLM Provider</label>
+          <select
+            value={provider}
+            onChange={(e) => handleProviderChange(e.target.value)}
+            className="w-full h-9 text-xs px-2.5 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="groq">Groq</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Claude</option>
+            <option value="gemini">Gemini</option>
+            <option value="mistral">Mistral</option>
+          </select>
         </div>
-
-        {/* Custom Model Input if selected */}
-        {isCustomModel && (
-          <div className="space-y-1.5 p-3 rounded-md bg-muted/30 border border-border">
-            <label className="text-xs font-semibold flex items-center gap-1.5">
-              <Edit3 className="size-3 text-primary" />
-              <span>Enter Custom Model Name</span>
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. meta-llama/Llama-3-70b-chat-hf or custom-finetune-v1"
-              value={customModelValue}
-              onChange={(e) => handleCustomModelChange(e.target.value)}
-              className="w-full text-xs font-mono p-2 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Passes this custom model name directly to {provider.toUpperCase()}'s API endpoint.
-            </p>
-          </div>
-        )}
 
         {/* Key Input & Verification */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold block">API Secret Key</label>
+          <label className="text-xs font-semibold block">{provider.toUpperCase()} API Key</label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="relative flex-1">
               <input
@@ -315,10 +264,94 @@ export const TierCKeys: React.FC<TierCKeysProps> = ({
           </div>
         </div>
 
+        {/* Status / Error Message */}
         {testResult && !testResult.success && (
           <div className="p-2.5 rounded-md text-xs flex items-center gap-2 bg-destructive/10 text-destructive border border-destructive/20">
             <AlertTriangle className="size-4 shrink-0" />
             <span>{testResult.message}</span>
+          </div>
+        )}
+
+        {/* ONLY SHOW MODELS AFTER KEY IS VERIFIED */}
+        {testResult?.success ? (
+          <div className="space-y-3 pt-2 border-t border-border">
+            {/* Model Identifier Dropdown */}
+            <div className="space-y-1.5">
+              <div className="h-5 flex items-center justify-between">
+                <label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                  <Cpu className="size-3.5 text-primary" />
+                  <span>Available Models for Verified Key</span>
+                </label>
+                {liveModels.length > 0 && (
+                  <span className="text-[10px] font-mono text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 leading-none">
+                    {liveModels.length} Live Models
+                  </span>
+                )}
+              </div>
+
+              <select
+                value={isCustomModel ? '__custom__' : model}
+                onChange={(e) => handleModelSelect(e.target.value)}
+                className="w-full h-9 text-xs px-2.5 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {/* If verified live models were discovered */}
+                {liveModels.length > 0 ? (
+                  <optgroup label={`Verified Available on this API Key (${liveModels.length})`}>
+                    {liveModels.map((m) => {
+                      const known = suitableList.find((item) => item.id === m);
+                      return (
+                        <option key={`live-${m}`} value={m}>
+                          {known ? `${known.label} (${m})` : m}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                ) : (
+                  <optgroup label={`Available Models for ${provider.toUpperCase()}`}>
+                    {suitableList.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label} ({item.desc})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+
+                {/* Custom Model Option */}
+                <optgroup label="Custom Specification">
+                  <option value="__custom__">Custom Model Name...</option>
+                </optgroup>
+              </select>
+            </div>
+
+            {/* Custom Model Input if selected */}
+            {isCustomModel && (
+              <div className="space-y-1.5 p-3 rounded-md bg-muted/30 border border-border">
+                <label className="text-xs font-semibold flex items-center gap-1.5">
+                  <Edit3 className="size-3 text-primary" />
+                  <span>Enter Custom Model Name</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. meta-llama/Llama-3-70b-chat-hf or custom-finetune-v1"
+                  value={customModelValue}
+                  onChange={(e) => handleCustomModelChange(e.target.value)}
+                  className="w-full text-xs font-mono p-2 rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Passes this custom model name directly to {provider.toUpperCase()}'s API endpoint.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 text-center space-y-1.5">
+            <div className="flex items-center justify-center gap-1.5 text-xs font-medium text-primary">
+              <Cpu className="size-3.5" />
+              <span>Verify API key to reveal available models</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-normal max-w-xs mx-auto">
+              Enter your {provider.toUpperCase()} key above and click <strong>Verify</strong> to authenticate and load available models for this key.
+            </p>
           </div>
         )}
       </div>

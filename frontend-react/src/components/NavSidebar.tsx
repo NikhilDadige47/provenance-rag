@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   Eye,
   UploadCloud,
+  Cpu,
   Gauge,
   ChevronLeft,
   ChevronRight,
@@ -9,7 +10,7 @@ import {
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
-export type NavItem = 'tier_a' | 'tier_b' | 'limits';
+export type NavItem = 'tier_a' | 'tier_b' | 'models' | 'limits';
 
 interface NavSidebarProps {
   activeNav: NavItem;
@@ -37,36 +38,49 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
   const navItems = [
     {
       id: 'tier_a' as NavItem,
-      title: 'Demo Corpus',
-      subtitle: 'Free pre-indexed corpus',
+      title: 'Sample Reports',
+      subtitle: 'Instant answers from Apple filings',
       icon: Eye,
       tag: 'Instant',
     },
     {
       id: 'tier_b' as NavItem,
-      title: 'Upload Documents',
-      subtitle: 'Upload custom PDFs & BYOK',
+      title: 'Your Documents',
+      subtitle: 'Upload PDFs & ask questions',
       icon: UploadCloud,
       tag: 'Private',
     },
     {
+      id: 'models' as NavItem,
+      title: 'AI Models',
+      subtitle: 'Cloud, local Ollama or personal key',
+      icon: Cpu,
+      tag: 'Smart',
+    },
+    {
       id: 'limits' as NavItem,
-      title: 'Limits & Cost Quotas',
-      subtitle: 'Questions, docs & session TTL',
+      title: 'Usage & Limits',
+      subtitle: 'Free questions & session timer',
       icon: Gauge,
-      tag: 'Active',
+      tag: 'Quota',
     },
   ];
 
   return (
     <aside
-      className={`hidden lg:flex border-r border-border surface-panel flex-col h-full shrink-0 transition-[width] duration-200 ease-out select-none relative ${
+      className={`hidden lg:flex border-r border-border bg-card bg-gradient-to-b from-primary/[0.07] via-card/95 to-card dark:from-primary/[0.10] dark:via-card/90 dark:to-background/95 flex-col h-full shrink-0 transition-[width] duration-200 ease-out select-none relative backdrop-blur-xs ${
         isCollapsed ? 'lg:w-[72px]' : 'lg:w-56'
       }`}
     >
+      {/* Subtle ambient lighting layer for soft depth */}
+      <div
+        className="absolute inset-0 overflow-hidden bg-[radial-gradient(ellipse_120%_60%_at_50%_0%,rgba(59,130,246,0.06),transparent_70%)] dark:bg-[radial-gradient(ellipse_120%_60%_at_50%_0%,rgba(59,130,246,0.10),transparent_70%)] pointer-events-none"
+        aria-hidden="true"
+      />
+
       {/* Brand Header */}
       <div
-        className={`h-16 px-3 flex items-center shrink-0 surface-header ${
+        className={`h-16 px-3 flex items-center shrink-0 border-b border-border/50 relative z-10 ${
           isCollapsed ? 'justify-center' : 'justify-between'
         }`}
       >

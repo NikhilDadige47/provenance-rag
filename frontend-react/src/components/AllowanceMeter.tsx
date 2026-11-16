@@ -34,8 +34,8 @@ export const AllowanceMeter: React.FC<AllowanceMeterProps> = ({
   }
 
   const label = hasVisitorKey
-    ? `${remaining} of ${max} questions left on your key, ${formatTtl(ttl)}`
-    : `${remaining} of ${max} questions left, ${formatTtl(ttl)}`;
+    ? `${remaining} of ${max} questions remaining on your key · ${formatTtl(ttl)}`
+    : `${remaining} of ${max} questions remaining · ${formatTtl(ttl)}`;
 
   return (
     <div className="flex items-center gap-2 min-w-0">

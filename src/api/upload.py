@@ -191,7 +191,7 @@ async def validate_and_estimate_upload(
         )
         if not test_res.ok:
             estimate.can_proceed = False
-            estimate.message = f"Parser API key verification failed: {test_res.hint}"
+            estimate.message = f"Parser API key verification failed: {test_res.hint or test_res.error or 'Invalid key'}"
 
     return estimate
 

@@ -12,9 +12,9 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ currentTier, theme, onToggleTheme, documentCount = 3 }) => {
   const tierLabels: Record<AccessTier, { label: string; color: string }> = {
-    tier_a: { label: 'Demo Corpus', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
-    tier_b: { label: 'Custom Uploads', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
-    tier_c: { label: 'BYOK Model Keys', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+    tier_a: { label: 'Sample Reports', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+    tier_b: { label: 'Your Documents', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+    tier_c: { label: 'Custom Key Active', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
   };
 
   return (
@@ -28,11 +28,11 @@ export const Header: React.FC<HeaderProps> = ({ currentTier, theme, onToggleThem
             <div className="flex items-center gap-2">
               <span className="font-bold font-poppins tracking-tight text-base sm:text-lg" style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Provenance RAG</span>
               <span className="hidden sm:inline-block text-[11px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">
-                v2.1 Hybrid
+                Verified AI
               </span>
             </div>
             <p className="text-xs text-muted-foreground hidden sm:block">
-              High-Assurance Hybrid Document Intelligence with Strict Source Attribution
+              AI Document Assistant with Verified Source Citations
             </p>
           </div>
         </div>
