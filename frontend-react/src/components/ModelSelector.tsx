@@ -220,33 +220,59 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const handleTestLocal = async () => {
     setIsTestingLocal(true);
     setLocalStatus(null);
-    const cleanUrl = localUrl.trim() || 'http://localhost:11434/v1';
+    const cleanUrl = localUrl.trim() || 'http://127.0.0.1:11434/v1';
+
+    // Candidate URLs to probe: try 127.0.0.1 and localhost (prevents IPv6 loopback binding mismatch on Linux)
+    const candidateUrls = [cleanUrl];
+    if (cleanUrl.includes('localhost')) {
+      candidateUrls.push(cleanUrl.replace('localhost', '127.0.0.1'));
+    } else if (cleanUrl.includes('127.0.0.1')) {
+      candidateUrls.push(cleanUrl.replace('127.0.0.1', 'localhost'));
+    }
 
     // 1. Try direct browser probe first (critical for Render / cloud deployments so client talks to local Ollama directly)
-    try {
-      const probeBase = cleanUrl.replace(/\/v1\/?$/, '');
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+    let isConnected = false;
+    let foundModels: string[] = [];
+    let workingUrl = cleanUrl;
 
-      const [resTags, resModels] = await Promise.allSettled([
-        fetch(`${probeBase}/api/tags`, { method: 'GET', signal: controller.signal }),
-        fetch(`${cleanUrl.replace(/\/+$/, '')}/models`, { method: 'GET', signal: controller.signal }),
-      ]);
-      clearTimeout(timeoutId);
+    for (const cand of candidateUrls) {
+      try {
+        const probeBase = cand.replace(/\/v1\/?$/, '');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-      let foundModels: string[] = [];
-      if (resTags.status === 'fulfilled' && resTags.value.ok) {
-        const data = await resTags.value.json().catch(() => null);
-        if (data && Array.isArray(data.models)) {
-          foundModels = data.models.map((m: any) => m.name || m.model).filter(Boolean);
+        const [resTags, resModels] = await Promise.allSettled([
+          fetch(`${probeBase}/api/tags`, { method: 'GET', signal: controller.signal }),
+          fetch(`${cand.replace(/\/+$/, '')}/models`, { method: 'GET', signal: controller.signal }),
+        ]);
+        clearTimeout(timeoutId);
+
+        if (resTags.status === 'fulfilled' && resTags.value.ok) {
+          isConnected = true;
+          workingUrl = cand;
+          const data = await resTags.value.json().catch(() => null);
+          if (data && Array.isArray(data.models)) {
+            foundModels = data.models.map((m: any) => m.name || m.model).filter(Boolean);
+          }
+          break;
+        } else if (resModels.status === 'fulfilled' && resModels.value.ok) {
+          isConnected = true;
+          workingUrl = cand;
+          const data = await resModels.value.json().catch(() => null);
+          if (data && Array.isArray(data.data)) {
+            foundModels = data.data.map((m: any) => m.id).filter(Boolean);
+          }
+          break;
         }
-      } else if (resModels.status === 'fulfilled' && resModels.value.ok) {
-        const data = await resModels.value.json().catch(() => null);
-        if (data && Array.isArray(data.data)) {
-          foundModels = data.data.map((m: any) => m.id).filter(Boolean);
-        }
+      } catch {
+        // Continue to next candidate URL
       }
+    }
 
+    if (isConnected) {
+      if (workingUrl !== localUrl) {
+        setLocalUrl(workingUrl);
+      }
       if (foundModels.length > 0) {
         setLocalStatus({
           tested: true,
@@ -258,11 +284,18 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           setLocalModel(foundModels[0]);
         }
         onToast(`Connected to local Ollama (${foundModels.length} models found).`, 'success');
-        setIsTestingLocal(false);
-        return;
+      } else {
+        // Connected to Ollama server, but user has 0 models pulled yet (total blobs: 0)
+        setLocalStatus({
+          tested: true,
+          success: true,
+          message: `Connected to Ollama! However, no models are downloaded yet (0 models found). Run 'ollama pull llama3.2:3b' in your terminal, then scan again.`,
+        });
+        setDiscoveredModels(['llama3.2:3b', 'llama3.1:8b', 'qwen2.5:3b']);
+        onToast('Connected to Ollama! Please run "ollama pull llama3.2:3b" in terminal to download a model.', 'info');
       }
-    } catch {
-      // Browser direct fetch failed; fall through to backend test
+      setIsTestingLocal(false);
+      return;
     }
 
     // 2. Fall back to backend connection test
@@ -272,13 +305,17 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         setLocalStatus({
           tested: true,
           success: true,
-          message: `Connected! Found ${res.models?.length || 0} local model(s).`,
+          message: res.models && res.models.length > 0
+            ? `Connected! Found ${res.models.length} local model(s).`
+            : `Connected to Ollama! Please run 'ollama pull llama3.2:3b' in terminal to download a model.`,
         });
         if (res.models && res.models.length > 0) {
           setDiscoveredModels(res.models);
           if (!res.models.includes(localModel)) {
             setLocalModel(res.models[0]);
           }
+        } else {
+          setDiscoveredModels(['llama3.2:3b', 'llama3.1:8b', 'qwen2.5:3b']);
         }
         onToast('Successfully connected to local model endpoint.', 'success');
       } else {
@@ -287,7 +324,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           success: false,
           message:
             res.message ||
-            'Could not connect to local model endpoint. Ensure Ollama is running with CORS enabled.',
+            'Could not connect to local model endpoint. Try using http://127.0.0.1:11434/v1 and ensure OLLAMA_ORIGINS="*" is set.',
         });
         onToast(res.message || 'Local connection failed.', 'error');
       }
@@ -757,13 +794,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <div className="p-2 rounded bg-background border border-border/70 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <span className="text-muted-foreground font-sans text-[10px] font-semibold block mb-0.5">macOS / Linux:</span>
-                        <code className="text-foreground select-all break-all">OLLAMA_ORIGINS="*" ollama serve</code>
+                        <code className="text-foreground select-all break-all">sudo systemctl stop ollama ; OLLAMA_ORIGINS="*" ollama serve</code>
                       </div>
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard?.writeText('OLLAMA_ORIGINS="*" ollama serve');
-                          onToast('Copied macOS/Linux command to clipboard!', 'info');
+                          navigator.clipboard?.writeText('sudo systemctl stop ollama ; OLLAMA_ORIGINS="*" ollama serve');
+                          onToast('Copied Linux/macOS command to clipboard!', 'info');
                         }}
                         className="shrink-0 p-1 text-muted-foreground hover:text-foreground text-[10px] border rounded flex items-center gap-1"
                       >
@@ -772,6 +809,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                       </button>
                     </div>
                   </div>
+
+                  <p className="text-[10px] text-muted-foreground/80 leading-normal italic">
+                    Tip: If you see "address already in use", Ollama is already running in the background. Stop the background service with <code>sudo systemctl stop ollama</code> (or Quit from system tray on Windows) before restarting with origins enabled.
+                  </p>
 
                   <Button
                     type="button"

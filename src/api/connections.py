@@ -62,39 +62,44 @@ async def verify_provider_connection(
 
     # Local LLMs (Ollama, LM Studio, LocalAI)
     if provider_clean in {"ollama", "local", "lmstudio"}:
-        probe_base = (base_url or "http://localhost:11434/v1").strip().rstrip("/")
-        if not probe_base.endswith("/v1"):
-            probe_base = f"{probe_base}/v1"
-        probe_url = f"{probe_base}/models"
+        base = (base_url or "http://127.0.0.1:11434/v1").strip().rstrip("/")
+        if not base.endswith("/v1"):
+            base = f"{base}/v1"
+
+        candidate_bases = [base]
+        if "localhost" in base:
+            candidate_bases.append(base.replace("localhost", "127.0.0.1"))
+        elif "127.0.0.1" in base:
+            candidate_bases.append(base.replace("127.0.0.1", "localhost"))
+
         headers: dict[str, str] = {}
         if key and key.reveal():
             headers["Authorization"] = f"Bearer {key.reveal()}"
 
         local_client = create_secure_client(allow_local_llm=True)
         try:
-            response = await local_client.get(probe_url, headers=headers, timeout=5.0)
-            if response.status_code == 200:
-                data = response.json()
-                models: list[str] = []
-                if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
-                    models = [m["id"] for m in data["data"] if isinstance(m, dict) and "id" in m]
-                return ConnectionTestResponse(
-                    ok=True,
-                    provider=provider_clean,
-                    models=models if models else ["llama3.1:8b"],
-                )
+            for probe_base in candidate_bases:
+                probe_url = f"{probe_base}/models"
+                try:
+                    response = await local_client.get(probe_url, headers=headers, timeout=4.0)
+                    if response.status_code == 200:
+                        data = response.json()
+                        models: list[str] = []
+                        if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+                            models = [m["id"] for m in data["data"] if isinstance(m, dict) and "id" in m]
+                        return ConnectionTestResponse(
+                            ok=True,
+                            provider=provider_clean,
+                            models=models if models else ["llama3.2:3b", "llama3.1:8b"],
+                        )
+                except Exception:
+                    continue
+
             return ConnectionTestResponse(
                 ok=False,
                 provider=provider_clean,
-                error=f"Local endpoint returned status {response.status_code}.",
-                hint="Verify that Ollama or LM Studio is serving on the specified URL.",
-            )
-        except Exception:
-            return ConnectionTestResponse(
-                ok=False,
-                provider=provider_clean,
-                error=f"Unable to connect to local model server at {probe_base}.",
-                hint="Ensure your local model runner is running (e.g. 'ollama serve' or LM Studio local server).",
+                error=f"Unable to connect to local model server at {base}.",
+                hint="Ensure your local model runner is running (e.g. 'OLLAMA_ORIGINS=\"*\" ollama serve' or LM Studio).",
             )
         finally:
             await local_client.aclose()
