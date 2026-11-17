@@ -9,8 +9,8 @@ Implements roadmap P4-T5 & architecture §5, §9.2:
 
 import re
 
+from src.generation.profiles import ModelProfile
 from src.retrieval.expansion import ExpandedContextPassage
-from src.generation.profiles import ModelProfile, get_model_profile, _build_frontier_prompts
 
 MAX_QUESTION_LENGTH = 1000
 

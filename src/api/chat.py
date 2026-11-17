@@ -580,7 +580,7 @@ async def chat(
             latency_ms=round(timings["rewrite_ms"], 1),
             status="done",
             details=[
-                f"De-referenced follow-up query"
+                "De-referenced follow-up query"
                 if history_dicts
                 else "Direct query processed"
             ],
@@ -630,7 +630,7 @@ async def chat(
         )
 
         print(f"\033[1;31m[RAG TRACE ❌ Gate 6 Not-Found Refusal]\033[0m Reason: {search_result.reason} | Best score: {best_score:.3f} < threshold 0.25")
-        print(f"\033[1;31m[RAG TRACE ❌ Gate 6 Not-Found Refusal]\033[0m Returning: 'I could not find the answer in the provided documents.'")
+        print("\033[1;31m[RAG TRACE ❌ Gate 6 Not-Found Refusal]\033[0m Returning: 'I could not find the answer in the provided documents.'")
         print(f"\033[1;35m{'=' * 75}\033[0m\n")
         log_chat_response(
             request_id=request_id,

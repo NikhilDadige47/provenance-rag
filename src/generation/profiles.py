@@ -8,16 +8,16 @@ Implements Strategy & Factory patterns for model-agnostic optimization:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import re
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.retrieval.expansion import ExpandedContextPassage
 
 
-class ModelTier(str, Enum):
+class ModelTier(StrEnum):
     MICRO = "micro"        # <= 3B params (e.g., qwen2.5:1.5b, llama3.2:1b/3b, phi3, tinyllama)
     MID = "mid"            # 7B - 14B params (e.g., llama3.1:8b, mistral:7b, qwen2.5:7b, gemma2:9b)
     FRONTIER = "frontier"  # 70B+ or frontier cloud (e.g., llama-3.3-70b-versatile, gpt-4o, claude-3-5-sonnet)
@@ -177,7 +177,6 @@ def get_model_profile(
     Uses parameter size regex and provider heuristics.
     """
     model_str = (model_name or "").lower().strip()
-    provider_str = (provider or "").lower().strip()
 
     # Explicit micro indicators (<= 3B)
     # Examples: qwen2.5:1.5b, llama3.2:1b, llama3.2:3b, phi3, phi-3.5, tinyllama, gemma:2b

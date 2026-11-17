@@ -1,7 +1,6 @@
 """Tests for model capabilities registry and dynamic prompt profiles."""
 
 from src.generation.profiles import (
-    ModelProfile,
     ModelTier,
     get_model_profile,
 )

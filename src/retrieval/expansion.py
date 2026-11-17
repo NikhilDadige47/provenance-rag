@@ -9,6 +9,7 @@ Implements roadmap P4-T4:
 - Strictly scope-isolated SQL parent context lookups
 """
 
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -198,10 +199,8 @@ def _citation_page(chunk: Any, parent_record: dict[str, Any] | None) -> int:
             or chunk.metadata.get("page_start")
         )
         if raw_meta:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 child = max(1, int(raw_meta))
-            except (TypeError, ValueError):
-                pass
 
     start = int((parent_record or {}).get("page_start") or 0)
     end = int((parent_record or {}).get("page_end") or 0)
