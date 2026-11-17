@@ -74,9 +74,11 @@ export function App() {
   const [queuedNonce, setQueuedNonce] = useState(0);
   const [visitorLlm, setVisitorLlm] = useState<LLMConfig | null>(null);
   const [serverConfig, setServerConfig] = useState<{
+    app_env: string;
     default_llm_provider: string;
     default_llm_model: string;
   }>({
+    app_env: 'development',
     default_llm_provider: 'groq',
     default_llm_model: 'openai/gpt-oss-120b',
   });
@@ -183,10 +185,11 @@ export function App() {
   // Eagerly fetch server default LLM configuration loaded from environment variables
   useEffect(() => {
     api.getConfig().then((cfg) => {
-      if (cfg?.default_llm_model) {
+      if (cfg) {
         setServerConfig({
+          app_env: (cfg.app_env || 'development').toLowerCase(),
           default_llm_provider: cfg.default_llm_provider || 'groq',
-          default_llm_model: cfg.default_llm_model,
+          default_llm_model: cfg.default_llm_model || 'openai/gpt-oss-120b',
         });
       }
     }).catch(() => {});

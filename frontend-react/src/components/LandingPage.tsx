@@ -91,13 +91,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 className="text-balance text-[1.85rem] font-bold leading-[1.12] tracking-tight text-foreground min-[380px]:text-[2.15rem] sm:text-5xl"
                 style={{ fontFamily: "'Poppins', sans-serif" }}
               >
-                Ask a document.
+                Ask Your Documents.
                 <br />
-                See the page it came from.
+                Get Answers You Can Verify.
               </h1>
               <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
-                Ask the pre-stored files, or upload your own PDF. The answer points to the page
-                it came from. If the document does not say it, you get a clear no.
+                Ask the preloaded files or upload your own PDF. Every answer shows the exact page
+                it came from—and if the document doesn’t contain the answer, you’ll get a clear
+                “not found” response.
               </p>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Button size="lg" onClick={onTryDemo} className="w-full gap-2 sm:w-auto">

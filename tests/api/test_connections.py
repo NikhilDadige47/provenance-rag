@@ -49,12 +49,15 @@ class TestConnectionDataModels:
 
     def test_public_config_response(self):
         config = PublicConfigResponse(
+            app_env="production",
             default_llm_provider="groq",
             default_llm_model="openai/gpt-oss-120b",
             demo_parser="llamaparse",
             session_ttl_hours=2.0,
         )
+        assert config.app_env == "production"
         assert config.default_llm_provider == "groq"
         assert config.default_llm_model == "openai/gpt-oss-120b"
         data = config.model_dump()
+        assert data["app_env"] == "production"
         assert data["default_llm_model"] == "openai/gpt-oss-120b"

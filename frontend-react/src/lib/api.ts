@@ -1,6 +1,7 @@
 import { AccessTier, UsageInfo, ExampleQuestion, UploadedDoc, CostEstimate, LLMConfig } from '../types';
 
 export interface ServerConfig {
+  app_env?: string;
   default_llm_provider: string;
   default_llm_model: string;
   demo_parser?: string;
@@ -153,6 +154,7 @@ export class ApiClient {
       // Fallback if network or pre-session
     }
     return {
+      app_env: 'development',
       default_llm_provider: 'groq',
       default_llm_model: 'openai/gpt-oss-120b',
     };

@@ -441,6 +441,7 @@ async def terms_text() -> FileResponse:
 
 
 class PublicConfigResponse(BaseModel):
+    app_env: str = Field(default="development", description="Server environment mode (e.g. development | production)")
     default_llm_provider: str = Field(default="groq", description="Owner-configured default LLM provider")
     default_llm_model: str = Field(default="openai/gpt-oss-120b", description="Owner-configured default LLM model")
     demo_parser: str = Field(default="llamaparse", description="Demo corpus parser")
@@ -452,6 +453,7 @@ async def public_config(request: Request) -> PublicConfigResponse:
     """Return public system configuration loaded from environment variables."""
     cfg: OwnerConfig = getattr(request.app.state, "cfg", None) or OwnerConfig.from_env()
     return PublicConfigResponse(
+        app_env=str(cfg.app_env or "development").strip().lower(),
         default_llm_provider=cfg.default_llm_provider,
         default_llm_model=cfg.default_llm_model,
         demo_parser=cfg.demo_parser,
