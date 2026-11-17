@@ -173,6 +173,7 @@ export function App() {
       setUsage(u);
       if (u.owner_llm_model) {
         setServerConfig((prev) => ({
+          ...prev,
           default_llm_provider: u.owner_llm_provider || prev.default_llm_provider,
           default_llm_model: u.owner_llm_model || prev.default_llm_model,
         }));
