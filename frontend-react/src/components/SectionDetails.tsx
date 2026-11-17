@@ -36,6 +36,7 @@ interface SectionDetailsProps {
   fillWidth?: boolean;
   hideHeader?: boolean;
   concealed?: boolean;
+  isProduction?: boolean;
 }
 
 export const SectionDetails: React.FC<SectionDetailsProps> = ({
@@ -43,6 +44,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
   usage,
   defaultModel,
   defaultProvider,
+  isProduction = false,
   scope,
   documents,
   onRequestDelete,
@@ -224,6 +226,7 @@ export const SectionDetails: React.FC<SectionDetailsProps> = ({
               sectionContext="standalone"
               defaultModel={defaultModel}
               defaultProvider={defaultProvider}
+              isProduction={isProduction}
             />
           </div>
         )}

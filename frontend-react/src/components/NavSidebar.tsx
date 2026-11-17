@@ -21,6 +21,7 @@ interface NavSidebarProps {
   onToggleCollapse?: () => void;
   isIngesting?: boolean;
   onBrandClick?: () => void;
+  isProduction?: boolean;
 }
 
 export const NavSidebar: React.FC<NavSidebarProps> = ({
@@ -30,6 +31,7 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
   onToggleCollapse,
   isIngesting = false,
   onBrandClick,
+  isProduction = false,
 }) => {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -53,7 +55,7 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({
     {
       id: 'models' as NavItem,
       title: 'AI Models',
-      subtitle: 'Cloud, local Ollama or personal key',
+      subtitle: isProduction ? 'Fast cloud AI or personal key' : 'Cloud, local Ollama or personal key',
       icon: Cpu,
       tag: 'Smart',
     },

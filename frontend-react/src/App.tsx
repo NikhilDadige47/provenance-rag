@@ -525,6 +525,11 @@ export function App() {
   const showChat = !hideChat && (!compact || mobilePane === 'chat');
   const showMobileSwitcher = compact && !hideChat && !keyboardOpen;
 
+  const isProduction =
+    (serverConfig.app_env || '').toLowerCase() === 'production' ||
+    import.meta.env.VITE_APP_ENV === 'production' ||
+    (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
+
   if (surface === 'landing') {
     return (
       <>
@@ -568,6 +573,7 @@ export function App() {
           onToggleCollapse={() => setIsNavCollapsed((prev) => !prev)}
           isIngesting={isIngesting}
           onBrandClick={returnToOverview}
+          isProduction={isProduction}
         />
 
         {/* SECTION 2: Details Panel for Selected Menu Item (Equally divided 50/50 by default) */}
@@ -576,6 +582,7 @@ export function App() {
           usage={usage}
           defaultModel={usage?.owner_llm_model || serverConfig.default_llm_model}
           defaultProvider={usage?.owner_llm_provider || serverConfig.default_llm_provider}
+          isProduction={isProduction}
           scope={scope}
           documents={documents}
           onRequestDelete={() => setShowDeleteModal(true)}

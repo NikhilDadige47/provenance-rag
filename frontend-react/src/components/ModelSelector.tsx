@@ -30,6 +30,7 @@ export interface ModelSelectorProps {
   sectionContext?: 'demo' | 'upload' | 'standalone';
   defaultModel?: string;
   defaultProvider?: string;
+  isProduction?: boolean;
 }
 
 interface ModelItem {
@@ -135,16 +136,31 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   sectionContext = 'demo',
   defaultModel = 'openai/gpt-oss-120b',
   defaultProvider = 'groq',
+  isProduction = false,
 }) => {
   const [isOpen, setIsOpen] = useState(sectionContext === 'standalone');
 
-  // Tab state
-  const initialTab: ModelTab = config?.isLocal
+  // Automatic production detection (server config, VITE_APP_ENV, or cloud origin like render.com)
+  const isProd = Boolean(
+    isProduction ||
+    (import.meta.env.VITE_APP_ENV === 'production') ||
+    (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+  );
+
+  // Tab state (in production, local Ollama is disabled so default to cloud AI)
+  const initialTab: ModelTab = (!isProd && config?.isLocal)
     ? 'local'
     : config?.key
       ? 'byok'
       : 'default';
   const [activeTab, setActiveTab] = useState<ModelTab>(initialTab);
+
+  // Switch away from local tab if environment is production
+  useEffect(() => {
+    if (isProd && activeTab === 'local') {
+      setActiveTab('default');
+    }
+  }, [isProd, activeTab]);
 
   // Local model state
   const [localUrl, setLocalUrl] = useState(config?.baseUrl || 'http://localhost:11434/v1');
@@ -527,8 +543,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       {/* Expanded Panel */}
       {isOpen && (
         <div className="p-2.5 sm:p-3.5 border-t border-border space-y-2.5 sm:space-y-3.5 bg-card/90">
-          {/* Tabs */}
-          <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted/60 rounded-lg border border-border/50 text-xs font-medium">
+          {/* Tabs (in production: 2 tabs, local Ollama hidden) */}
+          <div className={`grid ${isProd ? 'grid-cols-2' : 'grid-cols-3'} gap-1.5 p-1 bg-muted/60 rounded-lg border border-border/50 text-xs font-medium`}>
             <button
               type="button"
               onClick={() => setActiveTab('default')}
@@ -540,17 +556,19 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               <Sparkles className="size-3 text-primary" />
               <span>Included Cloud AI</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('local')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${activeTab === 'local'
-                  ? 'bg-card text-foreground shadow-xs font-semibold'
-                  : 'text-muted-foreground hover:text-foreground'
-                }`}
-            >
-              <Laptop className="size-3 text-emerald-500" />
-              <span>Local Ollama</span>
-            </button>
+            {!isProd && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('local')}
+                className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all ${activeTab === 'local'
+                    ? 'bg-card text-foreground shadow-xs font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`}
+              >
+                <Laptop className="size-3 text-emerald-500" />
+                <span>Local Ollama</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveTab('byok')}
@@ -588,8 +606,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             </div>
           )}
 
-          {/* TAB 2: LOCAL INFERENCE (OLLAMA / LM STUDIO / VLLM) */}
-          {activeTab === 'local' && (
+          {/* TAB 2: LOCAL INFERENCE (OLLAMA / LM STUDIO / VLLM) — Dev/Self-Hosted Only */}
+          {!isProd && activeTab === 'local' && (
             <div className="space-y-3 p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
               <div className="flex items-start gap-2">
                 <Laptop className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
